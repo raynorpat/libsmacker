@@ -67,6 +67,10 @@ void test_roundtrip_audio_pcm_formats(void);
 void test_roundtrip_audio_short_silence(void);
 void test_roundtrip_audio_long_truncated(void);
 void test_roundtrip_audio_two_tracks(void);
+void test_roundtrip_delta_identical(void);
+void test_roundtrip_keyframe_interval(void);
+void test_roundtrip_solid_still(void);
+void test_roundtrip_ring_frame(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -136,6 +140,10 @@ static const smk_test_case tests[] = {
     { "roundtrip_audio_short_silence", test_roundtrip_audio_short_silence },
     { "roundtrip_audio_long_truncated", test_roundtrip_audio_long_truncated },
     { "roundtrip_audio_two_tracks", test_roundtrip_audio_two_tracks },
+    { "roundtrip_delta_identical", test_roundtrip_delta_identical },
+    { "roundtrip_keyframe_interval", test_roundtrip_keyframe_interval },
+    { "roundtrip_solid_still", test_roundtrip_solid_still },
+    { "roundtrip_ring_frame", test_roundtrip_ring_frame },
     { NULL, NULL }
 };
 

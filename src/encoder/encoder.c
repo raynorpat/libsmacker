@@ -323,6 +323,28 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         }
     }
 
+    /*
+     * A tree with one symbol encodes zero bits. For the Type tree that would
+     * make an all-unchanged frame, or a single-color still, an empty chunk
+     * that the decoder rejects. Add an unused symbol so every frame's
+     * descriptors occupy at least one bit.
+     */
+    {
+        smk_huff *type = &trees[SMK_VIDEO_TREE_TYPE];
+        unsigned only = 0;
+        unsigned used = 0;
+
+        for (i = 0; i < SMK_HUFF_MAX_SYMBOLS; i++) {
+            if (type->freq[i] != 0) {
+                only = i;
+                used++;
+            }
+        }
+        if (used == 1)
+            smk_huff_count(type,
+                           (uint16_t)(only == 0xffffu ? 0xfffeu : 0xffffu));
+    }
+
     for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++) {
         if (smk_huff_build(&trees[i]) != 0) {
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
@@ -448,6 +470,55 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
 
         if (smk_container_add_frame(&container, keyframe_at(i, interval), type,
                                     payload, payload_size, err, errlen) != 0) {
+            free(payload);
+            status = SMK_ENC_ERR_ENCODE;
+            goto cleanup;
+        }
+        free(payload);
+    }
+
+    /*
+     * The ring frame is one extra physical frame: a delta from the last frame
+     * back to frame 0, so looping playback resumes correctly at frame 1.
+     */
+    if (options->ring) {
+        size_t video_size;
+        uint8_t *payload;
+
+        if (source->read_frame(source->user, 0, rgb) != 0) {
+            status = fail(err, errlen, SMK_ENC_ERR_INPUT,
+                          "cannot read frame 0 for ring");
+            goto cleanup;
+        }
+        smk_quant_map(&palette, rgb, source->width, source->height,
+                      options->dither, indices, lut);
+
+        smk_bw_init(&frame_bits);
+        if (smk_video_encode_frame(&video, indices, 0, trees, &frame_bits, 0) !=
+            0) {
+            smk_bw_free(&frame_bits);
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "failed to encode ring frame");
+            goto cleanup;
+        }
+        video_size = smk_bw_byte_count(&frame_bits);
+        if (video_size == 0) {
+            smk_bw_free(&frame_bits);
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "ring frame encoded to no data");
+            goto cleanup;
+        }
+        payload = (uint8_t *)malloc(video_size);
+        if (payload == NULL) {
+            smk_bw_free(&frame_bits);
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE, "out of memory");
+            goto cleanup;
+        }
+        memcpy(payload, smk_bw_data(&frame_bits), video_size);
+        smk_bw_free(&frame_bits);
+
+        if (smk_container_add_frame(&container, 0, 0, payload, video_size,
+                                    err, errlen) != 0) {
             free(payload);
             status = SMK_ENC_ERR_ENCODE;
             goto cleanup;
