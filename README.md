@@ -25,9 +25,9 @@ libsmacker is released under the Lesser GNU Public License, v2.1. See the file
 
 ## Usage
 
-See the [webpage](http://libsmacker.sourceforge.net) for sample code and
-function documentation. The source package additionally includes a pair of
-driver programs:
+See [docs/usage.md](docs/usage.md) for the API and a complete example, or the
+[webpage](http://libsmacker.sourceforge.net) for the original documentation.
+The source package additionally includes three example programs:
 
 - `src/tools/driver.c` - dumps all frames of a file to a `bmp/` subdirectory, and
   all audio as raw streams to `out_*.raw` files in the current working directory.
@@ -38,6 +38,15 @@ driver programs:
 
 Though the libraries are "bulletproofed" the sample apps are not: be cautious
 if you plan to implement in some critical environment.
+
+## Documentation
+
+- [docs/usage.md](docs/usage.md) - the public API, build and link instructions,
+  a complete example, ownership and return-code rules, audio and seeking notes,
+  and limitations.
+- [docs/smacker.md](docs/smacker.md) - the Smacker container, palette, audio,
+  Huffman tree, and 4x4 block video formats in detail, including differences
+  between the MultimediaWiki description and the actual decoders.
 
 ## Building
 
