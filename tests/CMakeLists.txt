@@ -7,6 +7,7 @@ add_executable(smk_tests
   test_image_tga.c
   test_image_bmp.c
   test_image_pcx.c
+  test_wav.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 

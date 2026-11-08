@@ -27,6 +27,12 @@ void test_pcx_8bit_1plane_palette(void);
 void test_pcx_8bit_3plane_rgb(void);
 void test_pcx_1bit(void);
 void test_pcx_truncated(void);
+void test_wav_16bit_mono(void);
+void test_wav_8bit_stereo(void);
+void test_wav_24bit_reduced(void);
+void test_wav_skips_unknown_chunks(void);
+void test_wav_rejects_compressed(void);
+void test_wav_truncated(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -53,6 +59,12 @@ static const smk_test_case tests[] = {
     { "pcx_8bit_3plane_rgb", test_pcx_8bit_3plane_rgb },
     { "pcx_1bit", test_pcx_1bit },
     { "pcx_truncated", test_pcx_truncated },
+    { "wav_16bit_mono", test_wav_16bit_mono },
+    { "wav_8bit_stereo", test_wav_8bit_stereo },
+    { "wav_24bit_reduced", test_wav_24bit_reduced },
+    { "wav_skips_unknown_chunks", test_wav_skips_unknown_chunks },
+    { "wav_rejects_compressed", test_wav_rejects_compressed },
+    { "wav_truncated", test_wav_truncated },
     { NULL, NULL }
 };
 
