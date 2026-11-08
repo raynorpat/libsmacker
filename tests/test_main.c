@@ -63,6 +63,10 @@ void test_video_delta_roundtrip(void);
 void test_roundtrip_still_global(void);
 void test_roundtrip_still_padded(void);
 void test_roundtrip_still_failure_removes_file(void);
+void test_roundtrip_audio_pcm_formats(void);
+void test_roundtrip_audio_short_silence(void);
+void test_roundtrip_audio_long_truncated(void);
+void test_roundtrip_audio_two_tracks(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -128,6 +132,10 @@ static const smk_test_case tests[] = {
     { "roundtrip_still_padded", test_roundtrip_still_padded },
     { "roundtrip_still_failure_removes_file",
       test_roundtrip_still_failure_removes_file },
+    { "roundtrip_audio_pcm_formats", test_roundtrip_audio_pcm_formats },
+    { "roundtrip_audio_short_silence", test_roundtrip_audio_short_silence },
+    { "roundtrip_audio_long_truncated", test_roundtrip_audio_long_truncated },
+    { "roundtrip_audio_two_tracks", test_roundtrip_audio_two_tracks },
     { NULL, NULL }
 };
 

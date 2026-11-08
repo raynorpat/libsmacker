@@ -223,7 +223,7 @@ smk_enc_status smk_wav_load(const char *path, smk_pcm_audio *audio,
                 const uint8_t *src = buffer + sample * bytes_per_sample;
 
                 if (bytes_per_sample == 1)
-                    pcm[out_index++] = (int16_t)(((int)src[0] - 128) << 8);
+                    pcm[out_index++] = (int16_t)(((int)src[0] - 128) * 256);
                 else if (bytes_per_sample == 2)
                     pcm[out_index++] = (int16_t)load_u16(src);
                 else

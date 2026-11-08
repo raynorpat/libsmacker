@@ -43,7 +43,9 @@ typedef struct {
  *
  * read_frame fills width * height * 3 bytes of RGB.
  * read_audio fills interleaved PCM for [start_sample, start_sample + count),
- * returning the number of bytes written. Samples past the end are silence.
+ * returning the number of bytes written. It may return fewer bytes than
+ * requested when the track ends early; the encoder pads with silence. Silence
+ * is 0x80 for 8-bit samples and 0 for 16-bit samples.
  */
 typedef struct smk_enc_source {
     void *user;

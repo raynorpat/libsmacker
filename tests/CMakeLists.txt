@@ -13,6 +13,7 @@ add_executable(smk_tests
   test_quantize.c
   test_video.c
   test_roundtrip_still.c
+  test_roundtrip_audio.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 

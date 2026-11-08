@@ -75,6 +75,73 @@ static unsigned clamp_colors(unsigned colors)
     return colors;
 }
 
+static size_t audio_align(const smk_enc_audio_info *info)
+{
+    return (size_t)info->channels * (size_t)(info->bits / 8);
+}
+
+/* Build the AudioRate descriptor, or fail on an unusable track format. */
+static int audio_descriptor(const smk_enc_audio_info *info, uint32_t *out)
+{
+    if (info->rate == 0 || info->rate > 0x00ffffffu)
+        return -1;
+    if (info->channels != 1 && info->channels != 2)
+        return -1;
+    if (info->bits != 8 && info->bits != 16)
+        return -1;
+
+    *out = 0x40000000u |
+           (info->bits == 16 ? 0x20000000u : 0u) |
+           (info->channels == 2 ? 0x10000000u : 0u) |
+           info->rate;
+    return 0;
+}
+
+/*
+ * The fraction of a sample frame that belongs to each video frame is
+ * rate * fps_den / fps_num. Keep the remainder so samples split exactly and
+ * never drift, regardless of whether the ratio is integral.
+ */
+typedef struct {
+    uint64_t rem;
+} audio_split;
+
+static int audio_frame_bytes(audio_split *split,
+                             const smk_enc_audio_info *info,
+                             unsigned fps_num, unsigned fps_den,
+                             size_t *samples_out, size_t *bytes_out)
+{
+    uint64_t step;
+    uint64_t samples;
+    size_t align = audio_align(info);
+
+    if (fps_num == 0 || fps_den == 0 || align == 0)
+        return -1;
+    if ((uint64_t)info->rate > UINT64_MAX / (uint64_t)fps_den)
+        return -1;
+
+    step = (uint64_t)info->rate * (uint64_t)fps_den;
+    split->rem += step;
+    if (split->rem < step)
+        return -1; /* overflow */
+    samples = split->rem / fps_num;
+    split->rem %= fps_num;
+    if (samples > SIZE_MAX / align)
+        return -1;
+
+    *samples_out = (size_t)samples;
+    *bytes_out = (size_t)samples * align;
+    return 0;
+}
+
+static void put_u32le(uint8_t *out, uint32_t value)
+{
+    out[0] = (uint8_t)(value & 0xffu);
+    out[1] = (uint8_t)((value >> 8) & 0xffu);
+    out[2] = (uint8_t)((value >> 16) & 0xffu);
+    out[3] = (uint8_t)((value >> 24) & 0xffu);
+}
+
 void smk_enc_options_default(smk_enc_options *options)
 {
     if (options == NULL)
@@ -110,6 +177,12 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     smk_container container;
     smk_container_info info;
     uint8_t palette_chunk[SMK_PALETTE_CHUNK_MAX];
+    audio_split splits[SMK_ENC_MAX_AUDIO_TRACKS];
+    size_t audio_pos[SMK_ENC_MAX_AUDIO_TRACKS];
+    size_t frame_samples[SMK_ENC_MAX_AUDIO_TRACKS];
+    size_t frame_audio_bytes[SMK_ENC_MAX_AUDIO_TRACKS];
+    unsigned tracks;
+    unsigned track;
     unsigned colors;
     unsigned fps_num;
     unsigned fps_den;
@@ -132,6 +205,12 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     if (source->width % 4 != 0 || source->height % 4 != 0)
         return fail(err, errlen, SMK_ENC_ERR_INPUT,
                     "frame dimensions must be multiples of 4");
+    if (source->audio_track_count > SMK_ENC_MAX_AUDIO_TRACKS)
+        return fail(err, errlen, SMK_ENC_ERR_INPUT,
+                    "too many audio tracks");
+    if (source->audio_track_count > 0 && source->read_audio == NULL)
+        return fail(err, errlen, SMK_ENC_ERR_INPUT,
+                    "audio tracks have no reader");
 
     pixels = (size_t)source->width * source->height;
     colors = clamp_colors(options->colors);
@@ -151,6 +230,43 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     memset(&info, 0, sizeof(info));
     for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++)
         smk_huff_init(&trees[i]);
+
+    /*
+     * Audio header fields: one descriptor per track and the largest unpacked
+     * chunk any frame will produce, which libsmacker uses to size its buffer.
+     */
+    tracks = source->audio_track_count;
+    for (track = 0; track < tracks; track++) {
+        audio_split split;
+        uint64_t max_bytes = 0;
+
+        if (audio_descriptor(&source->audio[track],
+                             &info.audio_rate[track]) != 0) {
+            status = fail(err, errlen, SMK_ENC_ERR_INPUT,
+                          "invalid audio track format");
+            goto cleanup;
+        }
+        split.rem = 0;
+        for (i = 0; i < source->frame_count; i++) {
+            size_t samples;
+            size_t bytes;
+
+            if (audio_frame_bytes(&split, &source->audio[track], fps_num,
+                                  fps_den, &samples, &bytes) != 0) {
+                status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                              "audio frame size overflow");
+                goto cleanup;
+            }
+            if (bytes > max_bytes)
+                max_bytes = bytes;
+        }
+        if (max_bytes > 0xffffffffu) {
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "audio frame is too large");
+            goto cleanup;
+        }
+        info.audio_size[track] = (uint32_t)max_bytes;
+    }
 
     rgb = (uint8_t *)malloc(pixels * 3);
     indices = (uint8_t *)malloc(pixels);
@@ -247,9 +363,12 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
 
     /* Pass 3: write the frames. */
     smk_video_reset(&video);
+    memset(splits, 0, sizeof(splits));
+    memset(audio_pos, 0, sizeof(audio_pos));
     for (i = 0; i < source->frame_count; i++) {
         size_t video_size;
         size_t payload_size;
+        size_t pos;
         uint8_t *payload;
         unsigned type;
 
@@ -274,17 +393,57 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         type = i == 0 ? 0x01u : 0u;
         video_size = smk_bw_byte_count(&frame_bits);
         payload_size = (i == 0 ? palette_size : 0) + video_size;
+        for (track = 0; track < tracks; track++) {
+            if (audio_frame_bytes(&splits[track], &source->audio[track],
+                                  fps_num, fps_den, &frame_samples[track],
+                                  &frame_audio_bytes[track]) != 0) {
+                smk_bw_free(&frame_bits);
+                status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                              "audio frame size overflow");
+                goto cleanup;
+            }
+            payload_size += 4 + frame_audio_bytes[track];
+            type |= 0x02u << track;
+        }
+
         payload = (uint8_t *)malloc(payload_size != 0 ? payload_size : 1);
         if (payload == NULL) {
             smk_bw_free(&frame_bits);
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE, "out of memory");
             goto cleanup;
         }
-        if (i == 0)
+
+        pos = 0;
+        if (i == 0) {
             memcpy(payload, palette_chunk, palette_size);
-        if (video_size != 0)
-            memcpy(payload + (i == 0 ? palette_size : 0),
-                   smk_bw_data(&frame_bits), video_size);
+            pos += palette_size;
+        }
+        for (track = 0; track < tracks; track++) {
+            size_t bytes = frame_audio_bytes[track];
+
+            put_u32le(payload + pos, (uint32_t)(4 + bytes));
+            pos += 4;
+            if (bytes != 0) {
+                size_t got = source->read_audio(
+                    source->user, track, audio_pos[track],
+                    frame_samples[track], payload + pos);
+
+                if (got > bytes)
+                    got = bytes;
+                if (got < bytes) {
+                    uint8_t silence =
+                        source->audio[track].bits == 8 ? 0x80 : 0x00;
+
+                    memset(payload + pos + got, silence, bytes - got);
+                }
+                pos += bytes;
+            }
+            audio_pos[track] += frame_samples[track];
+        }
+        if (video_size != 0) {
+            memcpy(payload + pos, smk_bw_data(&frame_bits), video_size);
+            pos += video_size;
+        }
         smk_bw_free(&frame_bits);
 
         if (smk_container_add_frame(&container, keyframe_at(i, interval), type,
