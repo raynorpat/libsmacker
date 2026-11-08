@@ -11,6 +11,7 @@ add_executable(smk_tests
   test_image_dir.c
   test_avi.c
   test_quantize.c
+  test_video.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 

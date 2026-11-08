@@ -82,7 +82,8 @@ set(SMACKER_ENCODER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/image.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/wav.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/avi.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/quantize.c)
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/quantize.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/video.c)
 set(SMACKER_TOOL_INPUT_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/build_smk/image_dir.c)
 

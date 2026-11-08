@@ -53,6 +53,13 @@ void test_quantize_deterministic(void);
 void test_quantize_dither_error(void);
 void test_quantize_global_spans_frames(void);
 void test_quantize_empty_histogram(void);
+void test_video_solid_and_keyframe(void);
+void test_video_mono(void);
+void test_video_full(void);
+void test_video_void_on_delta(void);
+void test_video_run_grouping(void);
+void test_video_write_roundtrip(void);
+void test_video_delta_roundtrip(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -107,6 +114,13 @@ static const smk_test_case tests[] = {
     { "quantize_dither_error", test_quantize_dither_error },
     { "quantize_global_spans_frames", test_quantize_global_spans_frames },
     { "quantize_empty_histogram", test_quantize_empty_histogram },
+    { "video_solid_and_keyframe", test_video_solid_and_keyframe },
+    { "video_mono", test_video_mono },
+    { "video_full", test_video_full },
+    { "video_void_on_delta", test_video_void_on_delta },
+    { "video_run_grouping", test_video_run_grouping },
+    { "video_write_roundtrip", test_video_write_roundtrip },
+    { "video_delta_roundtrip", test_video_delta_roundtrip },
     { NULL, NULL }
 };
 
