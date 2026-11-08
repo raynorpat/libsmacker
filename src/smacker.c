@@ -11,88 +11,13 @@
 
 #include "smacker.h"
 
+#include "format/bitio.h"
 #include "smk_malloc.h"
 
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-
-/* ************************************************************************* */
-/* BITSTREAM Structure */
-/* ************************************************************************* */
-/* Wraps a block of memory and adds functions to read 1 or 8 bits at a time */
-struct smk_bit_t {
-	const unsigned char * buffer, * end;
-	unsigned int bit_num;
-};
-
-/* ************************************************************************* */
-/* BITSTREAM Functions */
-/* ************************************************************************* */
-/** Initialize a bitstream wrapper */
-static void smk_bs_init(struct smk_bit_t * const bs, const unsigned char * const b, const size_t size)
-{
-	/* null check */
-	assert(bs);
-	assert(b);
-	/* set up the pointer to bitstream start and end, and set the bit pointer to 0 */
-	bs->buffer = b;
-	bs->end = b + size;
-	bs->bit_num = 0;
-}
-
-/* Reads a bit
-	Returns -1 if error encountered */
-static int smk_bs_read_1(struct smk_bit_t * const bs)
-{
-	int ret;
-	/* null check */
-	assert(bs);
-
-	/* don't die when running out of bits, but signal */
-	if (bs->buffer >= bs->end) {
-		fputs("libsmacker::smk_bs_read_1(): ERROR: bitstream exhausted.\n", stderr);
-		return -1;
-	}
-
-	/* get next bit and store for return */
-	ret = (*bs->buffer >> bs->bit_num) & 1;
-
-	/* advance to next bit */
-	if (bs->bit_num >= 7) {
-		/* Out of bits in this byte: next! */
-		bs->buffer ++;
-		bs->bit_num = 0;
-	} else
-		bs->bit_num ++;
-
-	return ret;
-}
-
-/* Reads a byte
-	Returns -1 if error. */
-static int smk_bs_read_8(struct smk_bit_t * const bs)
-{
-	/* null check */
-	assert(bs);
-
-	/* don't die when running out of bits, but signal */
-	if (bs->buffer + (bs->bit_num > 0) >= bs->end) {
-		fputs("libsmacker::smk_bs_read_8(): ERROR: bitstream exhausted.\n", stderr);
-		return -1;
-	}
-
-	if (bs->bit_num) {
-		/* unaligned read */
-		int ret = *bs->buffer >> bs->bit_num;
-		bs->buffer ++;
-		return ret | (*bs->buffer << (8 - bs->bit_num) & 0xFF);
-	}
-
-	/* aligned read */
-	return *bs->buffer++;
-}
 
 /* ************************************************************************* */
 /* HUFF8 Structure */
@@ -112,7 +37,7 @@ struct smk_huff8_t {
 /* HUFF8 Functions */
 /* ************************************************************************* */
 /* Recursive sub-func for building a tree into an array. */
-static int _smk_huff8_build_rec(struct smk_huff8_t * const t, struct smk_bit_t * const bs)
+static int _smk_huff8_build_rec(struct smk_huff8_t * const t, smk_bitreader * const bs)
 {
 	int bit, value;
 	assert(t);
@@ -172,7 +97,7 @@ static int _smk_huff8_build_rec(struct smk_huff8_t * const t, struct smk_bit_t *
 /**
 	Build an 8-bit Hufftree out of a Bitstream.
 */
-static int smk_huff8_build(struct smk_huff8_t * const t, struct smk_bit_t * const bs)
+static int smk_huff8_build(struct smk_huff8_t * const t, smk_bitreader * const bs)
 {
 	int bit;
 	/* null check */
@@ -215,7 +140,7 @@ static int smk_huff8_build(struct smk_huff8_t * const t, struct smk_bit_t * cons
 
 /* Look up an 8-bit value from a basic huff tree.
 	Return -1 on error. */
-static int smk_huff8_lookup(const struct smk_huff8_t * const t, struct smk_bit_t * const bs)
+static int smk_huff8_lookup(const struct smk_huff8_t * const t, smk_bitreader * const bs)
 {
 	int bit, index = 0;
 	/* null check */
@@ -260,7 +185,7 @@ struct smk_huff16_t {
 /* HUFF16 Functions */
 /* ************************************************************************* */
 /* Recursive sub-func for building a tree into an array. */
-static int _smk_huff16_build_rec(struct smk_huff16_t * const t, struct smk_bit_t * const bs, const struct smk_huff8_t * const low8, const struct smk_huff8_t * const hi8, const size_t limit)
+static int _smk_huff16_build_rec(struct smk_huff16_t * const t, smk_bitreader * const bs, const struct smk_huff8_t * const low8, const struct smk_huff8_t * const hi8, const size_t limit)
 {
 	int bit, value;
 	assert(t);
@@ -335,7 +260,7 @@ static int _smk_huff16_build_rec(struct smk_huff16_t * const t, struct smk_bit_t
 }
 
 /* Entry point for building a big 16-bit tree. */
-static int smk_huff16_build(struct smk_huff16_t * const t, struct smk_bit_t * const bs, const unsigned int alloc_size)
+static int smk_huff16_build(struct smk_huff16_t * const t, smk_bitreader * const bs, const unsigned int alloc_size)
 {
 	struct smk_huff8_t low8, hi8;
 	size_t limit;
@@ -445,7 +370,7 @@ static int smk_huff16_build(struct smk_huff16_t * const t, struct smk_bit_t * co
 /* Look up a 16-bit value from a large huff tree.
 	Return -1 on error.
 	Note that this also updates the recently-used-values cache. */
-static int smk_huff16_lookup(struct smk_huff16_t * const t, struct smk_bit_t * const bs)
+static int smk_huff16_lookup(struct smk_huff16_t * const t, smk_bitreader * const bs)
 {
 	int bit, value, index = 0;
 	/* null check */
@@ -676,7 +601,7 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 	unsigned char * hufftree_chunk = NULL;
 	unsigned long tree_size;
 	/* a bitstream struct */
-	struct smk_bit_t bs;
+	smk_bitreader bs;
 
 	/** **/
 	/* safe malloc the structure */
@@ -1275,7 +1200,7 @@ static char smk_render_video(struct smk_video_t * s, unsigned char * p, unsigned
 	unsigned short temp;
 	unsigned long i, j, k, row, col, skip;
 	/* used for video decoding */
-	struct smk_bit_t bs;
+	smk_bitreader bs;
 	/* results from a tree lookup */
 	int unpack;
 	/* unpack, broken into pieces */
@@ -1470,7 +1395,7 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 {
 	unsigned int j, k;
 	unsigned char * t = s->buffer;
-	struct smk_bit_t bs;
+	smk_bitreader bs;
 	char bit;
 	short unpack, unpack2;
 	/* used for audio decoding */

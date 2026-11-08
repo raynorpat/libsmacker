@@ -1,5 +1,5 @@
 #include "test.h"
-#include "bitio.h"
+#include "format/bitio.h"
 
 static uint32_t read_bits(const uint8_t *data, size_t *pos, unsigned count)
 {
@@ -46,6 +46,46 @@ void test_bitwriter_put_bit(void)
     SMK_ASSERT_EQ_INT(smk_bw_put_bit(&bw, 1), 0);
     SMK_ASSERT_EQ_INT(smk_bw_byte_count(&bw), 1);
     SMK_ASSERT_EQ_INT(smk_bw_data(&bw)[0], 0x05);
+    smk_bw_free(&bw);
+}
+
+static uint32_t read_with_smk_bs(smk_bitreader *bs, unsigned count)
+{
+    uint32_t value = 0;
+    unsigned i;
+
+    for (i = 0; i < count; i++) {
+        int bit = smk_bs_read_1(bs);
+        if (bit < 0)
+            return 0xffffffffu;
+        value |= (uint32_t)bit << i;
+    }
+    return value;
+}
+
+void test_bitreader_roundtrip(void)
+{
+    static const uint8_t packed[3] = { 0x5c, 0x96, 0x03 };
+    smk_bitreader bs;
+    smk_bitwriter bw;
+
+    smk_bs_init(&bs, packed, 3);
+    SMK_ASSERT_EQ_INT(read_with_smk_bs(&bs, 5), 0x1c);
+    SMK_ASSERT_EQ_INT(read_with_smk_bs(&bs, 6), 0x32);
+    SMK_ASSERT_EQ_INT(read_with_smk_bs(&bs, 7), 0x72);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), 18);
+    /* The reader is bounded by the byte buffer, so the third byte's
+       remaining six bits are padding zeros, then the stream is exhausted. */
+    SMK_ASSERT_EQ_INT(read_with_smk_bs(&bs, 6), 0);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), 24);
+    SMK_ASSERT_EQ_INT(smk_bs_read_1(&bs), -1);
+
+    smk_bw_init(&bw);
+    SMK_ASSERT_EQ_INT(smk_bw_put_bits(&bw, 0xa5, 8), 0);
+    smk_bs_init(&bs, smk_bw_data(&bw), 1);
+    SMK_ASSERT_EQ_INT(smk_bs_read_8(&bs), 0xa5);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), 8);
+    SMK_ASSERT_EQ_INT(smk_bs_read_8(&bs), -1);
     smk_bw_free(&bw);
 }
 

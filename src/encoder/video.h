@@ -1,7 +1,7 @@
 #ifndef SMK_VIDEO_H
 #define SMK_VIDEO_H
 
-#include "bitio.h"
+#include "format/bitio.h"
 #include "huffman.h"
 
 #include <stdint.h>

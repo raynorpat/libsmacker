@@ -9,6 +9,7 @@ void test_encode_null_output(void);
 void test_encode_missing_input(void);
 void test_bitwriter_lsb_example(void);
 void test_bitwriter_put_bit(void);
+void test_bitreader_roundtrip(void);
 void test_bitwriter_grows(void);
 void test_huffman_absent(void);
 void test_huffman_single_symbol(void);
@@ -91,6 +92,7 @@ static const smk_test_case tests[] = {
     { "encode_missing_input", test_encode_missing_input },
     { "bitwriter_lsb_example", test_bitwriter_lsb_example },
     { "bitwriter_put_bit", test_bitwriter_put_bit },
+    { "bitreader_roundtrip", test_bitreader_roundtrip },
     { "bitwriter_grows", test_bitwriter_grows },
     { "huffman_absent", test_huffman_absent },
     { "huffman_single_symbol", test_huffman_single_symbol },

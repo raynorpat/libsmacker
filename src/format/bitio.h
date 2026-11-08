@@ -4,6 +4,19 @@
 #include <stddef.h>
 #include <stdint.h>
 
+typedef struct smk_bitreader smk_bitreader;
+struct smk_bitreader {
+    const uint8_t *buffer;
+    const uint8_t *end;
+    unsigned bit_num;
+    size_t bits_read;
+};
+
+void smk_bs_init(smk_bitreader *bs, const uint8_t *data, size_t size);
+int smk_bs_read_1(smk_bitreader *bs);
+int smk_bs_read_8(smk_bitreader *bs);
+size_t smk_bs_tell(const smk_bitreader *bs);
+
 typedef struct {
     uint8_t *data;
     size_t capacity;

@@ -1,7 +1,7 @@
 #ifndef SMK_HUFFMAN_H
 #define SMK_HUFFMAN_H
 
-#include "bitio.h"
+#include "format/bitio.h"
 
 #include <stdint.h>
 

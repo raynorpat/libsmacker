@@ -1,7 +1,79 @@
+/**
+	libsmacker - A C library for decoding .smk Smacker Video files
+	Copyright (C) 2012-2021 Greg Kennedy
+
+	See smacker.h for more information.
+
+	smacker.c
+		Main implementation file of libsmacker.
+		Open, close, query, render, advance and seek an smk
+*/
+
 #include "bitio.h"
 
+#include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+void smk_bs_init(smk_bitreader *bs, const uint8_t *data, size_t size)
+{
+    assert(bs);
+    assert(data);
+    bs->buffer = data;
+    bs->end = data + size;
+    bs->bit_num = 0;
+    bs->bits_read = 0;
+}
+
+int smk_bs_read_1(smk_bitreader *bs)
+{
+    int ret;
+
+    assert(bs);
+
+    if (bs->buffer >= bs->end) {
+        fputs("libsmacker::smk_bs_read_1(): ERROR: bitstream exhausted.\n", stderr);
+        return -1;
+    }
+
+    ret = (*bs->buffer >> bs->bit_num) & 1;
+
+    if (bs->bit_num >= 7) {
+        bs->buffer++;
+        bs->bit_num = 0;
+    } else {
+        bs->bit_num++;
+    }
+
+    bs->bits_read++;
+    return ret;
+}
+
+int smk_bs_read_8(smk_bitreader *bs)
+{
+    assert(bs);
+
+    if (bs->buffer + (bs->bit_num > 0) >= bs->end) {
+        fputs("libsmacker::smk_bs_read_8(): ERROR: bitstream exhausted.\n", stderr);
+        return -1;
+    }
+
+    bs->bits_read += 8;
+
+    if (bs->bit_num) {
+        int ret = *bs->buffer >> bs->bit_num;
+        bs->buffer++;
+        return ret | (*bs->buffer << (8 - bs->bit_num) & 0xFF);
+    }
+
+    return *bs->buffer++;
+}
+
+size_t smk_bs_tell(const smk_bitreader *bs)
+{
+    return bs == NULL ? 0 : bs->bits_read;
+}
 
 void smk_bw_init(smk_bitwriter *bw)
 {

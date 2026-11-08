@@ -1,5 +1,5 @@
 #include "test.h"
-#include "bitio.h"
+#include "format/bitio.h"
 #include "huffman.h"
 
 #include <stdlib.h>
