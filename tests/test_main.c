@@ -60,6 +60,9 @@ void test_video_void_on_delta(void);
 void test_video_run_grouping(void);
 void test_video_write_roundtrip(void);
 void test_video_delta_roundtrip(void);
+void test_roundtrip_still_global(void);
+void test_roundtrip_still_padded(void);
+void test_roundtrip_still_failure_removes_file(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -121,6 +124,10 @@ static const smk_test_case tests[] = {
     { "video_run_grouping", test_video_run_grouping },
     { "video_write_roundtrip", test_video_write_roundtrip },
     { "video_delta_roundtrip", test_video_delta_roundtrip },
+    { "roundtrip_still_global", test_roundtrip_still_global },
+    { "roundtrip_still_padded", test_roundtrip_still_padded },
+    { "roundtrip_still_failure_removes_file",
+      test_roundtrip_still_failure_removes_file },
     { NULL, NULL }
 };
 
