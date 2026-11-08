@@ -18,6 +18,7 @@ static void usage(FILE *out, const char *program)
         "      --palette MODE      adaptive|global|frame (default adaptive)\n"
         "      --dither MODE       none|ordered|fs (default none)\n"
         "      --colors N          palette size 2..256 (default 256)\n"
+        "      --palette-threshold N  adaptive switch threshold, 0..255 (default 6)\n"
         "      --keyframe-interval N  frames between keyframes (default 150)\n"
         "      --ring              add a seamless loop ring frame\n"
         "      --background RRGGBB alpha composite color (default 000000)\n"
@@ -181,6 +182,17 @@ int main(int argc, char **argv)
             if (++i >= argc || parse_uint(argv[i], &options.colors) != 0 ||
                 options.colors < 2 || options.colors > 256)
                 return usage_error(argv[0], "--colors expects 2..256");
+        } else if (strcmp(arg, "--palette-threshold") == 0) {
+            char *end;
+            double value;
+
+            if (++i >= argc)
+                return usage_error(argv[0], "--palette-threshold needs a value");
+            value = strtod(argv[i], &end);
+            if (end == argv[i] || *end != '\0' || value < 0.0 || value > 255.0)
+                return usage_error(argv[0],
+                                   "--palette-threshold expects 0..255");
+            options.palette_threshold = value;
         } else if (strcmp(arg, "--keyframe-interval") == 0) {
             if (++i >= argc ||
                 parse_uint(argv[i], &options.keyframe_interval) != 0)

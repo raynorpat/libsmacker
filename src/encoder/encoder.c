@@ -142,6 +142,84 @@ static void put_u32le(uint8_t *out, uint32_t value)
     out[3] = (uint8_t)((value >> 24) & 0xffu);
 }
 
+typedef struct {
+    const smk_palette *palette;
+    int frame_palette;
+} palette_choice;
+
+static int build_frame_palette(smk_histogram *hist, const uint8_t *rgb,
+                               size_t pixels, unsigned colors,
+                               smk_palette *out)
+{
+    smk_histogram_init(hist);
+    smk_histogram_add(hist, rgb, pixels);
+    if (smk_quant_build_global(hist, colors, out) == 0 || out->count == 0)
+        return -1;
+    return 0;
+}
+
+/*
+ * Pick the palette for one frame and map the frame through it. Global mode
+ * always uses the shared palette. Frame mode always builds a new one.
+ * Adaptive mode keeps the shared palette unless the per-frame error exceeds
+ * the threshold. The same decision is made in the count and write passes.
+ */
+static int choose_palette(const smk_enc_options *options,
+                          const smk_palette *global, smk_histogram *hist,
+                          const uint8_t *rgb, unsigned width, unsigned height,
+                          unsigned colors, smk_quant_lut *lut,
+                          uint8_t *indices, smk_palette *scratch,
+                          palette_choice *choice)
+{
+    size_t pixels = (size_t)width * height;
+
+    choice->palette = global;
+    choice->frame_palette = 0;
+
+    if (options->palette == SMK_ENC_PALETTE_FRAME) {
+        if (build_frame_palette(hist, rgb, pixels, colors, scratch) != 0)
+            return -1;
+        choice->palette = scratch;
+        choice->frame_palette = 1;
+    } else {
+        smk_quant_lut_init(lut);
+        smk_quant_map(global, rgb, width, height, options->dither, indices,
+                      lut);
+        if (options->palette == SMK_ENC_PALETTE_ADAPTIVE &&
+            smk_quant_mean_error(global, rgb, pixels, indices) >
+                options->palette_threshold) {
+            if (build_frame_palette(hist, rgb, pixels, colors, scratch) != 0)
+                return -1;
+            choice->palette = scratch;
+            choice->frame_palette = 1;
+        }
+    }
+
+    if (choice->frame_palette) {
+        smk_quant_lut_init(lut);
+        smk_quant_map(choice->palette, rgb, width, height, options->dither,
+                      indices, lut);
+    }
+    return 0;
+}
+
+/*
+ * A palette chunk is written on frame 0. Frame mode writes one on every frame;
+ * adaptive mode writes one whenever a frame palette starts or ends, because
+ * the previous palette must be restored and a palette change needs a keyframe.
+ */
+static int palette_is_emitted(smk_enc_palette_mode mode, unsigned index,
+                              int frame_palette, int previous_frame_palette)
+{
+    if (mode == SMK_ENC_PALETTE_FRAME)
+        return 1;
+    if (index == 0)
+        return 1;
+    if (mode == SMK_ENC_PALETTE_ADAPTIVE)
+        return frame_palette || previous_frame_palette;
+    return 0;
+}
+
 void smk_enc_options_default(smk_enc_options *options)
 {
     if (options == NULL)
@@ -151,6 +229,7 @@ void smk_enc_options_default(smk_enc_options *options)
     options->palette = SMK_ENC_PALETTE_ADAPTIVE;
     options->dither = SMK_ENC_DITHER_NONE;
     options->colors = 256;
+    options->palette_threshold = 6.0;
     options->keyframe_interval = 150;
     options->fps_num = 15;
     options->fps_den = 1;
@@ -169,6 +248,8 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     uint8_t *indices = NULL;
     smk_histogram *hist = NULL;
     smk_palette palette;
+    smk_palette frame_palette;
+    palette_choice choice;
     smk_quant_lut *lut = NULL;
     smk_huff trees[SMK_VIDEO_TREE_COUNT];
     smk_video video;
@@ -189,6 +270,8 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     unsigned interval;
     unsigned i;
     size_t palette_size;
+    int prev_frame_palette;
+    int emit_palette;
     int have_video = 0;
     int have_tree_blob = 0;
     int have_container = 0;
@@ -227,6 +310,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     memset(&tree_blob, 0, sizeof(tree_blob));
     memset(&frame_bits, 0, sizeof(frame_bits));
     memset(&palette, 0, sizeof(palette));
+    memset(&frame_palette, 0, sizeof(frame_palette));
     memset(&info, 0, sizeof(info));
     for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++)
         smk_huff_init(&trees[i]);
@@ -277,24 +361,27 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         goto cleanup;
     }
 
-    /* Pass 1: build a global palette from every frame. */
-    smk_histogram_init(hist);
-    for (i = 0; i < source->frame_count; i++) {
-        if (source->read_frame(source->user, i, rgb) != 0) {
-            if (err != NULL && errlen > 0)
-                snprintf(err, errlen, "cannot read frame %u", i);
-            status = SMK_ENC_ERR_INPUT;
+    smk_quant_lut_init(lut);
+
+    /* Pass 1: build the shared palette from every frame (unless per-frame). */
+    if (options->palette != SMK_ENC_PALETTE_FRAME) {
+        smk_histogram_init(hist);
+        for (i = 0; i < source->frame_count; i++) {
+            if (source->read_frame(source->user, i, rgb) != 0) {
+                if (err != NULL && errlen > 0)
+                    snprintf(err, errlen, "cannot read frame %u", i);
+                status = SMK_ENC_ERR_INPUT;
+                goto cleanup;
+            }
+            smk_histogram_add(hist, rgb, pixels);
+        }
+        if (smk_quant_build_global(hist, colors, &palette) == 0 ||
+            palette.count == 0) {
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "could not build a palette");
             goto cleanup;
         }
-        smk_histogram_add(hist, rgb, pixels);
     }
-    if (smk_quant_build_global(hist, colors, &palette) == 0 ||
-        palette.count == 0) {
-        status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
-                      "could not build a palette");
-        goto cleanup;
-    }
-    smk_quant_lut_init(lut);
 
     if (smk_video_init(&video, source->width, source->height) != 0) {
         status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
@@ -305,17 +392,30 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
 
     /* Pass 2: count every symbol the write pass will produce. */
     smk_video_reset(&video);
+    prev_frame_palette = 0;
     for (i = 0; i < source->frame_count; i++) {
+        int keyframe;
+
         if (source->read_frame(source->user, i, rgb) != 0) {
             if (err != NULL && errlen > 0)
                 snprintf(err, errlen, "cannot read frame %u", i);
             status = SMK_ENC_ERR_INPUT;
             goto cleanup;
         }
-        smk_quant_map(&palette, rgb, source->width, source->height,
-                      options->dither, indices, lut);
-        if (smk_video_encode_frame(&video, indices,
-                                   keyframe_at(i, interval), trees, NULL, 1) !=
+        if (choose_palette(options, &palette, hist, rgb, source->width,
+                           source->height, colors, lut, indices,
+                           &frame_palette, &choice) != 0) {
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "could not build a palette");
+            goto cleanup;
+        }
+        emit_palette = palette_is_emitted(options->palette, i,
+                                          choice.frame_palette,
+                                          prev_frame_palette);
+        prev_frame_palette = choice.frame_palette;
+        keyframe = keyframe_at(i, interval) || emit_palette;
+
+        if (smk_video_encode_frame(&video, indices, keyframe, trees, NULL, 1) !=
             0) {
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
                           "failed to count video symbols");
@@ -381,10 +481,9 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     }
     have_container = 1;
 
-    palette_size = build_palette_chunk(&palette, palette_chunk);
-
     /* Pass 3: write the frames. */
     smk_video_reset(&video);
+    prev_frame_palette = 0;
     memset(splits, 0, sizeof(splits));
     memset(audio_pos, 0, sizeof(audio_pos));
     for (i = 0; i < source->frame_count; i++) {
@@ -393,6 +492,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         size_t pos;
         uint8_t *payload;
         unsigned type;
+        int keyframe;
 
         if (source->read_frame(source->user, i, rgb) != 0) {
             if (err != NULL && errlen > 0)
@@ -400,21 +500,33 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
             status = SMK_ENC_ERR_INPUT;
             goto cleanup;
         }
-        smk_quant_map(&palette, rgb, source->width, source->height,
-                      options->dither, indices, lut);
+        if (choose_palette(options, &palette, hist, rgb, source->width,
+                           source->height, colors, lut, indices,
+                           &frame_palette, &choice) != 0) {
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "could not build a palette");
+            goto cleanup;
+        }
+        emit_palette = palette_is_emitted(options->palette, i,
+                                          choice.frame_palette,
+                                          prev_frame_palette);
+        prev_frame_palette = choice.frame_palette;
+        keyframe = keyframe_at(i, interval) || emit_palette;
+        palette_size = emit_palette
+            ? build_palette_chunk(choice.palette, palette_chunk) : 0;
 
         smk_bw_init(&frame_bits);
-        if (smk_video_encode_frame(&video, indices, keyframe_at(i, interval),
-                                   trees, &frame_bits, 0) != 0) {
+        if (smk_video_encode_frame(&video, indices, keyframe, trees,
+                                   &frame_bits, 0) != 0) {
             smk_bw_free(&frame_bits);
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
                           "failed to encode video frame");
             goto cleanup;
         }
 
-        type = i == 0 ? 0x01u : 0u;
+        type = emit_palette ? 0x01u : 0u;
         video_size = smk_bw_byte_count(&frame_bits);
-        payload_size = (i == 0 ? palette_size : 0) + video_size;
+        payload_size = palette_size + video_size;
         for (track = 0; track < tracks; track++) {
             if (audio_frame_bytes(&splits[track], &source->audio[track],
                                   fps_num, fps_den, &frame_samples[track],
@@ -436,7 +548,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         }
 
         pos = 0;
-        if (i == 0) {
+        if (palette_size != 0) {
             memcpy(payload, palette_chunk, palette_size);
             pos += palette_size;
         }
@@ -468,7 +580,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         }
         smk_bw_free(&frame_bits);
 
-        if (smk_container_add_frame(&container, keyframe_at(i, interval), type,
+        if (smk_container_add_frame(&container, keyframe, type,
                                     payload, payload_size, err, errlen) != 0) {
             free(payload);
             status = SMK_ENC_ERR_ENCODE;
@@ -483,19 +595,38 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
      */
     if (options->ring) {
         size_t video_size;
+        size_t payload_size;
         uint8_t *payload;
+        int ring_keyframe;
 
         if (source->read_frame(source->user, 0, rgb) != 0) {
             status = fail(err, errlen, SMK_ENC_ERR_INPUT,
                           "cannot read frame 0 for ring");
             goto cleanup;
         }
-        smk_quant_map(&palette, rgb, source->width, source->height,
-                      options->dither, indices, lut);
+        if (choose_palette(options, &palette, hist, rgb, source->width,
+                           source->height, colors, lut, indices,
+                           &frame_palette, &choice) != 0) {
+            status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
+                          "could not build a palette");
+            goto cleanup;
+        }
+
+        /*
+         * The loop must resume with frame 0's palette. Re-emit it when it
+         * differs from the palette in effect after the last frame; a palette
+         * change turns the ring frame into a keyframe.
+         */
+        emit_palette = options->palette == SMK_ENC_PALETTE_FRAME ||
+            (options->palette == SMK_ENC_PALETTE_ADAPTIVE &&
+             (choice.frame_palette || prev_frame_palette));
+        ring_keyframe = emit_palette ? 1 : 0;
+        palette_size = emit_palette
+            ? build_palette_chunk(choice.palette, palette_chunk) : 0;
 
         smk_bw_init(&frame_bits);
-        if (smk_video_encode_frame(&video, indices, 0, trees, &frame_bits, 0) !=
-            0) {
+        if (smk_video_encode_frame(&video, indices, ring_keyframe, trees,
+                                   &frame_bits, 0) != 0) {
             smk_bw_free(&frame_bits);
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
                           "failed to encode ring frame");
@@ -508,17 +639,21 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
                           "ring frame encoded to no data");
             goto cleanup;
         }
-        payload = (uint8_t *)malloc(video_size);
+        payload_size = palette_size + video_size;
+        payload = (uint8_t *)malloc(payload_size);
         if (payload == NULL) {
             smk_bw_free(&frame_bits);
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE, "out of memory");
             goto cleanup;
         }
-        memcpy(payload, smk_bw_data(&frame_bits), video_size);
+        if (palette_size != 0)
+            memcpy(payload, palette_chunk, palette_size);
+        memcpy(payload + palette_size, smk_bw_data(&frame_bits), video_size);
         smk_bw_free(&frame_bits);
 
-        if (smk_container_add_frame(&container, 0, 0, payload, video_size,
-                                    err, errlen) != 0) {
+        if (smk_container_add_frame(&container, ring_keyframe,
+                                    emit_palette ? 0x01u : 0u, payload,
+                                    payload_size, err, errlen) != 0) {
             free(payload);
             status = SMK_ENC_ERR_ENCODE;
             goto cleanup;

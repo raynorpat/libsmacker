@@ -65,6 +65,7 @@ typedef struct {
     smk_enc_palette_mode palette;
     smk_enc_dither_mode dither;
     unsigned colors;             /* 2..256 */
+    double palette_threshold;    /* adaptive: mean error, 0..255 levels */
     unsigned keyframe_interval;  /* 0 = only frame 0 */
     unsigned fps_num;
     unsigned fps_den;
