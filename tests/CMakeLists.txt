@@ -2,6 +2,8 @@ add_executable(smk_tests
   test_main.c
   test_util.c
   test_cli.c
+  test_bitio.c
+  test_huffman.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 

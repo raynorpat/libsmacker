@@ -76,7 +76,9 @@ add_library(Smacker::smacker ALIAS ${SMACKER_LINK_TARGET})
 
 # Reusable encoder sources, compiled directly into build_smk and the tests.
 set(SMACKER_ENCODER_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/encoder.c)
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/encoder.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/bitio.c
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/huffman.c)
 set(SMACKER_TOOL_INPUT_SOURCES)
 
 if(SMACKER_BUILD_TOOLS)
