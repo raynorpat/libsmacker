@@ -1,19 +1,9 @@
 #include "test.h"
 #include "video.h"
+#include "format/video.h"
 
 #include <stdlib.h>
 #include <string.h>
-
-static const unsigned run_table[64] = {
-     1,   2,   3,   4,   5,   6,   7,   8,
-     9,  10,  11,  12,  13,  14,  15,  16,
-    17,  18,  19,  20,  21,  22,  23,  24,
-    25,  26,  27,  28,  29,  30,  31,  32,
-    33,  34,  35,  36,  37,  38,  39,  40,
-    41,  42,  43,  44,  45,  46,  47,  48,
-    49,  50,  51,  52,  53,  54,  55,  56,
-    57,  58,  59, 128, 256, 512, 1024, 2048
-};
 
 static void init_trees(smk_huff trees[SMK_VIDEO_TREE_COUNT])
 {
@@ -209,126 +199,51 @@ void test_video_run_grouping(void)
     check_run_descriptor(2048 * 4, 0x03ff, 1);
 }
 
-typedef struct {
-    const uint8_t *data;
-    size_t bit;
-} video_reader;
-
-static unsigned read_one_bit(video_reader *reader)
+static void init_reader(smk_bitreader *bs, const smk_bitwriter *bw)
 {
-    unsigned bit = (reader->data[reader->bit >> 3] >>
-                    (reader->bit & 7)) & 1u;
+    static const uint8_t empty = 0;
+    const uint8_t *data = smk_bw_data(bw);
 
-    reader->bit++;
-    return bit;
+    if (data == NULL)
+        smk_bs_init(bs, &empty, 0);
+    else
+        smk_bs_init(bs, data, smk_bw_byte_count(bw));
 }
 
-static int read_symbol(video_reader *reader, const smk_huff *tree)
+/* Serialize each built tree and open a walker. Absent trees use alloc_size 0. */
+static int build_walkers(smk_huff trees[SMK_VIDEO_TREE_COUNT],
+                         smk_huff16 walkers[SMK_VIDEO_TREE_COUNT])
 {
-    /* Tests are single-threaded; avoid 128 KB on every call stack. */
-    static uint16_t used[SMK_HUFF_MAX_SYMBOLS];
-    unsigned used_count = 0;
     unsigned i;
-    uint32_t value = 0;
-    unsigned length;
 
-    for (i = 0; i < SMK_HUFF_MAX_SYMBOLS; i++) {
-        if (tree->freq[i] != 0)
-            used[used_count++] = (uint16_t)i;
-    }
+    for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++) {
+        smk_bitwriter bw;
+        smk_bitreader bs;
+        unsigned packed = smk_huff_packed_nodes(&trees[i]);
+        uint32_t alloc = packed == 0 ? 0u : 12u + 4u * packed;
 
-    /* A single-symbol tree reads with no bits, as libsmacker does. */
-    if (used_count == 1 && tree->len[used[0]] == 0)
-        return (int)used[0];
-
-    for (length = 1; length <= 31; length++) {
-        value = (value << 1) | read_one_bit(reader);
-        for (i = 0; i < used_count; i++) {
-            uint16_t symbol = used[i];
-
-            if (tree->len[symbol] == length && tree->code[symbol] == value)
-                return (int)symbol;
+        memset(&walkers[i], 0, sizeof(walkers[i]));
+        smk_bw_init(&bw);
+        if (smk_huff_serialize(&trees[i], &bw) != 0) {
+            smk_bw_free(&bw);
+            return -1;
         }
+        init_reader(&bs, &bw);
+        if (smk_huff16_build(&walkers[i], &bs, alloc) != 1) {
+            smk_bw_free(&bw);
+            return -1;
+        }
+        smk_bw_free(&bw);
     }
-    return -1;
+    return 0;
 }
 
-/*
- * Decode one frame starting at start_bit, exactly as the documented codec
- * does. `frame` must hold the reference state (zeros for a keyframe).
- */
-static int decode_frame(const smk_huff trees[SMK_VIDEO_TREE_COUNT],
-                        const uint8_t *data, size_t end_bit, size_t start_bit,
-                        unsigned width, unsigned height, uint8_t *frame)
+static void free_walkers(smk_huff16 walkers[SMK_VIDEO_TREE_COUNT])
 {
-    video_reader reader;
-    unsigned block_width = width / 4;
-    unsigned block_height = height / 4;
-    unsigned total = block_width * block_height;
-    unsigned block = 0;
+    unsigned i;
 
-    reader.data = data;
-    reader.bit = start_bit;
-
-    while (block < total) {
-        int symbol = read_symbol(&reader, &trees[SMK_VIDEO_TREE_TYPE]);
-        unsigned type;
-        unsigned run;
-        unsigned extra;
-        unsigned k;
-
-        if (symbol < 0)
-            return -1;
-        type = (unsigned)symbol & 3u;
-        run = run_table[((unsigned)symbol >> 2) & 0x3fu];
-        extra = ((unsigned)symbol >> 8) & 0xffu;
-
-        for (k = 0; k < run && block < total; k++, block++) {
-            unsigned bx = block % block_width;
-            unsigned by = block / block_width;
-            unsigned x0 = bx * 4;
-            unsigned y0 = by * 4;
-
-            if (type == 3) {
-                unsigned row;
-
-                for (row = 0; row < 4; row++)
-                    memset(frame + (size_t)(y0 + row) * width + x0, (int)extra,
-                           4);
-            } else if (type == 0) {
-                int colors = read_symbol(&reader, &trees[SMK_VIDEO_TREE_MCLR]);
-                int map = read_symbol(&reader, &trees[SMK_VIDEO_TREE_MMAP]);
-                unsigned pixel;
-
-                if (colors < 0 || map < 0)
-                    return -1;
-                for (pixel = 0; pixel < 16; pixel++) {
-                    unsigned color = ((unsigned)map >> pixel) & 1u
-                        ? (unsigned)colors >> 8 : (unsigned)colors & 0xffu;
-
-                    frame[(size_t)(y0 + pixel / 4) * width + x0 + pixel % 4] =
-                        (uint8_t)color;
-                }
-            } else if (type == 1) {
-                unsigned row;
-
-                for (row = 0; row < 4; row++) {
-                    int right = read_symbol(&reader, &trees[SMK_VIDEO_TREE_FULL]);
-                    int left = read_symbol(&reader, &trees[SMK_VIDEO_TREE_FULL]);
-                    uint8_t *row_data = frame + (size_t)(y0 + row) * width + x0;
-
-                    if (right < 0 || left < 0)
-                        return -1;
-                    row_data[0] = (uint8_t)((unsigned)left & 0xffu);
-                    row_data[1] = (uint8_t)(((unsigned)left >> 8) & 0xffu);
-                    row_data[2] = (uint8_t)((unsigned)right & 0xffu);
-                    row_data[3] = (uint8_t)(((unsigned)right >> 8) & 0xffu);
-                }
-            }
-        }
-    }
-
-    return reader.bit == end_bit ? 0 : -1;
+    for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++)
+        smk_huff16_free(&walkers[i]);
 }
 
 static void make_mixed_frame(uint8_t *frame, unsigned width, unsigned height)
@@ -397,9 +312,18 @@ void test_video_write_roundtrip(void)
                       0);
     SMK_ASSERT(writer.bit_count > 0);
     memset(decoded, 0, pixels);
-    SMK_ASSERT_EQ_INT(decode_frame(trees, smk_bw_data(&writer),
-                                   writer.bit_count, 0, width, height, decoded),
-                      0);
+    {
+        smk_huff16 walkers[SMK_VIDEO_TREE_COUNT];
+        smk_bitreader bs;
+
+        SMK_ASSERT_EQ_INT(build_walkers(trees, walkers), 0);
+        init_reader(&bs, &writer);
+        SMK_ASSERT_EQ_INT(smk_video_decode(&bs, walkers, decoded, width, height,
+                                           '2'),
+                          0);
+        SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)writer.bit_count);
+        free_walkers(walkers);
+    }
     SMK_ASSERT_MEM_EQ(decoded, source, pixels);
 
     /* A repeat write pass must produce byte-identical output. */
@@ -491,16 +415,24 @@ void test_video_delta_roundtrip(void)
                       0);
 
     memset(decoded, 0, pixels);
-    SMK_ASSERT_EQ_INT(decode_frame(trees, smk_bw_data(&writer),
-                                   key_writer.bit_count, 0, width, height,
-                                   decoded),
-                      0);
-    SMK_ASSERT_MEM_EQ(decoded, first, pixels);
-    SMK_ASSERT_EQ_INT(decode_frame(trees, smk_bw_data(&writer),
-                                   writer.bit_count, key_writer.bit_count,
-                                   width, height, decoded),
-                      0);
-    SMK_ASSERT_MEM_EQ(decoded, second, pixels);
+    {
+        smk_huff16 walkers[SMK_VIDEO_TREE_COUNT];
+        smk_bitreader bs;
+
+        SMK_ASSERT_EQ_INT(build_walkers(trees, walkers), 0);
+        init_reader(&bs, &writer);
+        SMK_ASSERT_EQ_INT(smk_video_decode(&bs, walkers, decoded, width, height,
+                                           '2'),
+                          0);
+        SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)key_writer.bit_count);
+        SMK_ASSERT_MEM_EQ(decoded, first, pixels);
+        SMK_ASSERT_EQ_INT(smk_video_decode(&bs, walkers, decoded, width, height,
+                                           '2'),
+                          0);
+        SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)writer.bit_count);
+        SMK_ASSERT_MEM_EQ(decoded, second, pixels);
+        free_walkers(walkers);
+    }
 
     smk_bw_free(&key_writer);
     smk_bw_free(&writer);
@@ -509,4 +441,71 @@ void test_video_delta_roundtrip(void)
     free(first);
     free(second);
     free(decoded);
+}
+
+static void decode_smk4(smk_huff trees[SMK_VIDEO_TREE_COUNT],
+                        smk_huff16 walkers[SMK_VIDEO_TREE_COUNT],
+                        const unsigned *raw, unsigned raw_count,
+                        const uint16_t *symbols, unsigned symbol_count,
+                        const uint8_t expect[16])
+{
+    smk_bitwriter bw;
+    smk_bitreader bs;
+    uint8_t frame[16];
+    unsigned i;
+
+    smk_bw_init(&bw);
+    SMK_ASSERT_EQ_INT(smk_huff_encode(&trees[SMK_VIDEO_TREE_TYPE], 1, &bw), 0);
+    for (i = 0; i < raw_count; i++)
+        SMK_ASSERT_EQ_INT(smk_bw_put_bit(&bw, raw[i]), 0);
+    for (i = 0; i < symbol_count; i++) {
+        SMK_ASSERT_EQ_INT(
+            smk_huff_encode(&trees[SMK_VIDEO_TREE_FULL], symbols[i], &bw), 0);
+    }
+
+    memset(frame, 0, sizeof(frame));
+    init_reader(&bs, &bw);
+    SMK_ASSERT_EQ_INT(smk_video_decode(&bs, walkers, frame, 4, 4, '4'), 0);
+    SMK_ASSERT_MEM_EQ(frame, expect, 16);
+    smk_bw_free(&bw);
+}
+
+void test_video_smk4_blocks(void)
+{
+    smk_huff trees[SMK_VIDEO_TREE_COUNT];
+    smk_huff16 walkers[SMK_VIDEO_TREE_COUNT];
+    unsigned i;
+    static const unsigned double_raw[] = { 1 };
+    static const uint16_t double_symbols[] = { 0x0301, 0x0402 };
+    static const uint8_t double_expect[16] = {
+        0x01, 0x01, 0x03, 0x03,
+        0x01, 0x01, 0x03, 0x03,
+        0x02, 0x02, 0x04, 0x04,
+        0x02, 0x02, 0x04, 0x04
+    };
+    static const unsigned half_raw[] = { 0, 1 };
+    static const uint16_t half_symbols[] = { 0x0301, 0x0402, 0x0301, 0x0402 };
+    static const uint8_t half_expect[16] = {
+        0x02, 0x04, 0x01, 0x03,
+        0x02, 0x04, 0x01, 0x03,
+        0x02, 0x04, 0x01, 0x03,
+        0x02, 0x04, 0x01, 0x03
+    };
+
+    init_trees(trees);
+    smk_huff_count(&trees[SMK_VIDEO_TREE_TYPE], 1);
+    smk_huff_count(&trees[SMK_VIDEO_TREE_FULL], 0x0301);
+    smk_huff_count(&trees[SMK_VIDEO_TREE_FULL], 0x0402);
+    for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++)
+        SMK_ASSERT_EQ_INT(smk_huff_build(&trees[i]), 0);
+    SMK_ASSERT_EQ_INT(smk_huff_packed_nodes(&trees[SMK_VIDEO_TREE_MMAP]), 0);
+    SMK_ASSERT_EQ_INT(smk_huff_packed_nodes(&trees[SMK_VIDEO_TREE_MCLR]), 0);
+    SMK_ASSERT_EQ_INT(build_walkers(trees, walkers), 0);
+
+    decode_smk4(trees, walkers, double_raw, 1, double_symbols, 2,
+                double_expect);
+    decode_smk4(trees, walkers, half_raw, 2, half_symbols, 4, half_expect);
+
+    free_walkers(walkers);
+    free_trees(trees);
 }

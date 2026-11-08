@@ -3,35 +3,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum {
-    SMK_BLOCK_MONO = 0,
-    SMK_BLOCK_FULL = 1,
-    SMK_BLOCK_VOID = 2,
-    SMK_BLOCK_SOLID = 3
-};
-
-static const unsigned sizetable[64] = {
-     1,   2,   3,   4,   5,   6,   7,   8,
-     9,  10,  11,  12,  13,  14,  15,  16,
-    17,  18,  19,  20,  21,  22,  23,  24,
-    25,  26,  27,  28,  29,  30,  31,  32,
-    33,  34,  35,  36,  37,  38,  39,  40,
-    41,  42,  43,  44,  45,  46,  47,  48,
-    49,  50,  51,  52,  53,  54,  55,  56,
-    57,  58,  59, 128, 256, 512, 1024, 2048
-};
-
 typedef struct {
     uint8_t type;
     uint8_t extra;       /* solid color */
     uint16_t mono_colors; /* high byte: color 1, low byte: color 2 */
     uint16_t mono_map;
 } block_info;
-
-typedef struct {
-    int (*emit)(void *user, unsigned tree, uint16_t symbol);
-    void *user;
-} symbol_sink;
 
 int smk_video_init(smk_video *video, unsigned width, unsigned height)
 {
@@ -148,55 +125,29 @@ static void classify_block(const smk_video *video, const uint8_t *indices,
     }
 }
 
-static int emit_symbol(const symbol_sink *sink, unsigned tree, uint16_t symbol)
+static int emit_symbol(const smk_symbol_sink *sink, unsigned tree,
+                       uint16_t symbol)
 {
     return sink->emit(sink->user, tree, symbol);
-}
-
-static unsigned run_for_remaining(unsigned remaining)
-{
-    unsigned index = 0;
-    unsigned i;
-
-    for (i = 0; i < 64; i++) {
-        if (sizetable[i] <= remaining)
-            index = i;
-        else
-            break;
-    }
-    return index;
 }
 
 /* Emit the per-block pixel payload (mono/full) for one block. */
 static int emit_block_pixels(const smk_video *video, const uint8_t *indices,
                              const block_info *info, unsigned block,
-                             const symbol_sink *sink)
+                             const smk_symbol_sink *sink)
 {
     unsigned bx = block % video->block_width;
     unsigned by = block / video->block_width;
     unsigned x0 = bx * 4;
     unsigned y0 = by * 4;
 
-    if (info->type == SMK_BLOCK_MONO) {
-        if (emit_symbol(sink, SMK_VIDEO_TREE_MCLR, info->mono_colors) != 0)
-            return -1;
-        return emit_symbol(sink, SMK_VIDEO_TREE_MMAP, info->mono_map);
-    }
+    if (info->type == SMK_BLOCK_MONO)
+        return smk_video_emit_mono(sink, info->mono_colors, info->mono_map);
 
     if (info->type == SMK_BLOCK_FULL) {
-        unsigned row;
+        const uint8_t *pixels = indices + (size_t)y0 * video->width + x0;
 
-        for (row = 0; row < 4; row++) {
-            const uint8_t *p = indices + (size_t)(y0 + row) * video->width +
-                               x0;
-            uint16_t right = (uint16_t)(p[2] | (p[3] << 8));
-            uint16_t left = (uint16_t)(p[0] | (p[1] << 8));
-
-            if (emit_symbol(sink, SMK_VIDEO_TREE_FULL, right) != 0)
-                return -1;
-            if (emit_symbol(sink, SMK_VIDEO_TREE_FULL, left) != 0)
-                return -1;
-        }
+        return smk_video_emit_full(sink, pixels, video->width);
     }
     return 0;
 }
@@ -229,7 +180,7 @@ int smk_video_encode_frame(smk_video *video, const uint8_t *indices,
     block_info *blocks;
     unsigned total_blocks;
     unsigned block;
-    symbol_sink sink;
+    smk_symbol_sink sink;
     writer_sink ws;
 
     if (video == NULL || indices == NULL || trees == NULL)
@@ -268,10 +219,11 @@ int smk_video_encode_frame(smk_video *video, const uint8_t *indices,
             unsigned remaining = end - block;
 
             while (remaining > 0) {
-                unsigned run_index = run_for_remaining(remaining);
-                unsigned run = sizetable[run_index];
-                uint16_t descriptor = (uint16_t)(
-                    first->type | (run_index << 2) | (first->extra << 8));
+                unsigned run_index = smk_video_run_index(remaining);
+                unsigned run = smk_video_run_length[run_index];
+                uint16_t descriptor = smk_video_pack_type(first->type,
+                                                          run_index,
+                                                          first->extra);
                 unsigned k;
 
                 if (emit_symbol(&sink, SMK_VIDEO_TREE_TYPE, descriptor) != 0)

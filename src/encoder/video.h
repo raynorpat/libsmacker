@@ -1,7 +1,7 @@
 #ifndef SMK_VIDEO_H
 #define SMK_VIDEO_H
 
-#include "format/bitio.h"
+#include "format/video.h"
 #include "format/huffman.h"
 
 #include <stdint.h>
@@ -9,13 +9,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/* Tree order as stored in the file. */
-#define SMK_VIDEO_TREE_MMAP 0
-#define SMK_VIDEO_TREE_MCLR 1
-#define SMK_VIDEO_TREE_FULL 2
-#define SMK_VIDEO_TREE_TYPE 3
-#define SMK_VIDEO_TREE_COUNT 4
 
 typedef struct {
     unsigned width;

@@ -14,6 +14,7 @@
 #include "format/bitio.h"
 #include "format/huffman.h"
 #include "format/palette.h"
+#include "format/video.h"
 #include "smk_malloc.h"
 
 #include <assert.h>
@@ -699,199 +700,15 @@ unsigned long smk_get_audio_size(const smk object, const unsigned char t)
 
 static char smk_render_video(struct smk_video_t * s, unsigned char * p, unsigned int size)
 {
-	unsigned char * t = s->frame;
-	unsigned char s1, s2;
-	unsigned short temp;
-	unsigned long i, j, k, row, col, skip;
-	/* used for video decoding */
 	smk_bitreader bs;
-	/* results from a tree lookup */
-	int unpack;
-	/* unpack, broken into pieces */
-	unsigned char type;
-	unsigned char blocklen;
-	unsigned char typedata;
-	char bit;
-	const unsigned short sizetable[64] = {
-		1,	 2,	3,	4,	5,	6,	7,	8,
-		9,	10,	11,	12,	13,	14,	15,	16,
-		17,	18,	19,	20,	21,	22,	23,	24,
-		25,	26,	27,	28,	29,	30,	31,	32,
-		33,	34,	35,	36,	37,	38,	39,	40,
-		41,	42,	43,	44,	45,	46,	47,	48,
-		49,	50,	51,	52,	53,	54,	55,	56,
-		57,	58,	59,	128,	256,	512,	1024,	2048
-	};
+
 	/* null check */
 	assert(s);
 	assert(p);
-	row = 0;
-	col = 0;
 	/* Set up a bitstream for video unpacking */
 	smk_bs_init(&bs, p, size);
-
-	/* Reset the cache on all bigtrees */
-	for (i = 0; i < 4; i++)
-		memset(&s->tree[i].cache, 0, 3 * sizeof(unsigned short));
-
-	while (row < s->h) {
-		if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_TYPE], &bs)) < 0) {
-			fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from TYPE tree.\n", stderr);
-			return -1;
-		}
-
-		type = ((unpack & 0x0003));
-		blocklen = ((unpack & 0x00FC) >> 2);
-		typedata = ((unpack & 0xFF00) >> 8);
-
-		/* support for v4 full-blocks */
-		if (type == 1 && s->v == '4') {
-			bit = smk_bs_read_1(&bs);
-
-			if (bit)
-				type = 4;
-			else {
-				bit = smk_bs_read_1(&bs);
-
-				if (bit)
-					type = 5;
-			}
-		}
-
-		for (j = 0; (j < sizetable[blocklen]) && (row < s->h); j ++) {
-			skip = (row * s->w) + col;
-
-			switch (type) {
-			case 0:
-				if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_MCLR], &bs)) < 0) {
-					fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from MCLR tree.\n", stderr);
-					return -1;
-				}
-
-				s1 = (unpack & 0xFF00) >> 8;
-				s2 = (unpack & 0x00FF);
-
-				if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_MMAP], &bs)) < 0) {
-					fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from MMAP tree.\n", stderr);
-					return -1;
-				}
-
-				temp = 0x01;
-
-				for (k = 0; k < 4; k ++) {
-					for (i = 0; i < 4; i ++) {
-						if (unpack & temp)
-							t[skip + i] = s1;
-						else
-							t[skip + i] = s2;
-
-						temp = temp << 1;
-					}
-
-					skip += s->w;
-				}
-
-				break;
-
-			case 1: /* FULL BLOCK */
-				for (k = 0; k < 4; k ++) {
-					if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_FULL], &bs)) < 0) {
-						fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from FULL tree.\n", stderr);
-						return -1;
-					}
-
-					t[skip + 3] = ((unpack & 0xFF00) >> 8);
-					t[skip + 2] = (unpack & 0x00FF);
-
-					if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_FULL], &bs)) < 0) {
-						fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from FULL tree.\n", stderr);
-						return -1;
-					}
-
-					t[skip + 1] = ((unpack & 0xFF00) >> 8);
-					t[skip] = (unpack & 0x00FF);
-					skip += s->w;
-				}
-
-				break;
-
-			case 2: /* VOID BLOCK */
-				/* break;
-				if (s->frame)
-				{
-					memcpy(&t[skip], &s->frame[skip], 4);
-					skip += s->w;
-					memcpy(&t[skip], &s->frame[skip], 4);
-					skip += s->w;
-					memcpy(&t[skip], &s->frame[skip], 4);
-					skip += s->w;
-					memcpy(&t[skip], &s->frame[skip], 4);
-				} */
-				break;
-
-			case 3: /* SOLID BLOCK */
-				memset(&t[skip], typedata, 4);
-				skip += s->w;
-				memset(&t[skip], typedata, 4);
-				skip += s->w;
-				memset(&t[skip], typedata, 4);
-				skip += s->w;
-				memset(&t[skip], typedata, 4);
-				break;
-
-			case 4: /* V4 DOUBLE BLOCK */
-				for (k = 0; k < 2; k ++) {
-					if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_FULL], &bs)) < 0) {
-						fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from FULL tree.\n", stderr);
-						return -1;
-					}
-
-					for (i = 0; i < 2; i ++) {
-						memset(&t[skip + 2], (unpack & 0xFF00) >> 8, 2);
-						memset(&t[skip], (unpack & 0x00FF), 2);
-						skip += s->w;
-					}
-				}
-
-				break;
-
-			case 5: /* V4 HALF BLOCK */
-				for (k = 0; k < 2; k ++) {
-					if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_FULL], &bs)) < 0) {
-						fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from FULL tree.\n", stderr);
-						return -1;
-					}
-
-					t[skip + 3] = ((unpack & 0xFF00) >> 8);
-					t[skip + 2] = (unpack & 0x00FF);
-					t[skip + s->w + 3] = ((unpack & 0xFF00) >> 8);
-					t[skip + s->w + 2] = (unpack & 0x00FF);
-
-					if ((unpack = smk_huff16_lookup(&s->tree[SMK_TREE_FULL], &bs)) < 0) {
-						fputs("libsmacker::smk_render_video() - ERROR: failed to lookup from FULL tree.\n", stderr);
-						return -1;
-					}
-
-					t[skip + 1] = ((unpack & 0xFF00) >> 8);
-					t[skip] = (unpack & 0x00FF);
-					t[skip + s->w + 1] = ((unpack & 0xFF00) >> 8);
-					t[skip + s->w] = (unpack & 0x00FF);
-					skip += (s->w << 1);
-				}
-
-				break;
-			}
-
-			col += 4;
-
-			if (col >= s->w) {
-				col = 0;
-				row += 4;
-			}
-		}
-	}
-
-	return 0;
+	return smk_video_decode(&bs, s->tree, s->frame, (unsigned)s->w,
+	                        (unsigned)s->h, (char)s->v);
 }
 
 /* Decompress audio track i. */
