@@ -45,6 +45,14 @@ void test_avi_interleaved_chunks(void);
 void test_avi_32bit_video(void);
 void test_avi_odd_width_stride(void);
 void test_avi_rejects_unsupported_codec(void);
+void test_quantize_histogram_accumulates(void);
+void test_quantize_frame_palette_limit(void);
+void test_quantize_global_from_histogram(void);
+void test_quantize_exact_256(void);
+void test_quantize_deterministic(void);
+void test_quantize_dither_error(void);
+void test_quantize_global_spans_frames(void);
+void test_quantize_empty_histogram(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -91,6 +99,14 @@ static const smk_test_case tests[] = {
     { "avi_32bit_video", test_avi_32bit_video },
     { "avi_odd_width_stride", test_avi_odd_width_stride },
     { "avi_rejects_unsupported_codec", test_avi_rejects_unsupported_codec },
+    { "quantize_histogram_accumulates", test_quantize_histogram_accumulates },
+    { "quantize_frame_palette_limit", test_quantize_frame_palette_limit },
+    { "quantize_global_from_histogram", test_quantize_global_from_histogram },
+    { "quantize_exact_256", test_quantize_exact_256 },
+    { "quantize_deterministic", test_quantize_deterministic },
+    { "quantize_dither_error", test_quantize_dither_error },
+    { "quantize_global_spans_frames", test_quantize_global_spans_frames },
+    { "quantize_empty_histogram", test_quantize_empty_histogram },
     { NULL, NULL }
 };
 
