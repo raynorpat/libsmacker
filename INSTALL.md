@@ -46,9 +46,13 @@ The build is controlled by these CMake options:
 | --- | --- | --- |
 | `SMACKER_BUILD_STATIC` | `ON` | Build the static libsmacker library. |
 | `SMACKER_BUILD_SHARED` | `ON` | Build the shared libsmacker library. |
-| `SMACKER_BUILD_TOOLS` | `OFF` | Build the `driver` and `smk2avi` example programs. |
+| `SMACKER_BUILD_TOOLS` | `OFF` | Build the example programs. |
+| `SMACKER_SDL_VERSION` | `AUTO` | SDL version for `smk_sdl_player`: `AUTO`, `2` or `3`. |
 
 At least one of `SMACKER_BUILD_STATIC` or `SMACKER_BUILD_SHARED` must be enabled.
+
+`smk_sdl_player` is only built when `SMACKER_BUILD_STATIC` is `ON` and an SDL2
+or SDL3 CMake package is found. `AUTO` prefers SDL3 and falls back to SDL2.
 
 For example, to build only the static library and the example programs:
 
@@ -129,8 +133,8 @@ save space when several programs use libsmacker.
 
 ## Example programs
 
-`driver` and `smk2avi` are example programs that show how to use libsmacker.
-They can also test a successful build.
+`driver`, `smk2avi` and `smk_sdl_player` are example programs that show how to
+use libsmacker. They can also test a successful build.
 
 Build them with `-DSMACKER_BUILD_TOOLS=ON`; the executables are written to the
 build directory:
@@ -138,8 +142,11 @@ build directory:
 ```sh
 ./build/driver file.smk
 ./build/smk2avi file.smk
+./build/smk_sdl_player file.smk
 ```
 
 `driver` takes one `.smk` file and writes frames to a `bmp/` subdirectory and
 audio to `out_*.raw` files. `smk2avi` accepts one or more `.smk` files and
-converts each to an AVI file.
+converts each to an AVI file. `smk_sdl_player` plays a `.smk` file in a window
+with sound; press Esc or q to quit, Space to pause, and the left/right arrow
+keys to seek one second.

@@ -33,6 +33,8 @@ driver programs:
   all audio as raw streams to `out_*.raw` files in the current working directory.
 - `src/tools/smk2avi.c` - converts `.smk` file(s) to AVI files: uncompressed
   24-bit color and a PCM audio stream.
+- `src/tools/smk_sdl_player.c` - plays a `.smk` file in a window with sound
+  using SDL3 (or SDL2). Links against the static libsmacker library.
 
 Though the libraries are "bulletproofed" the sample apps are not: be cautious
 if you plan to implement in some critical environment.
@@ -48,12 +50,17 @@ cmake --build build
 ```
 
 This builds both static and shared libraries by default. To also build the
-`driver` and `smk2avi` example programs, configure with:
+example programs, configure with:
 
 ```sh
 cmake -S . -B build -DSMACKER_BUILD_TOOLS=ON
 cmake --build build
 ```
+
+The `driver` and `smk2avi` programs are always built by that option. The SDL
+playback example is added when SDL3 or SDL2 is found and the static library is
+enabled. CMake prefers SDL3; pass `-DSMACKER_SDL_VERSION=2` or
+`-DSMACKER_SDL_VERSION=3` to force a version.
 
 See [INSTALL.md](INSTALL.md) for the full list of build options and
 installation instructions.
@@ -65,6 +72,7 @@ installation instructions.
 - Replaced the autotools and IDE project files with a CMake build.
 - Install `smacker.h` and the libsmacker libraries with `cmake --install`.
 - Added optional `driver` and `smk2avi` build targets.
+- Added `smk_sdl_player`, an SDL2/SDL3 playback example.
 - Converted the documentation to Markdown.
 
 ### 1.2.0

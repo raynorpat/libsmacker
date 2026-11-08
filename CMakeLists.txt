@@ -12,7 +12,10 @@ include(GNUInstallDirs)
 
 option(SMACKER_BUILD_STATIC "Build the static libsmacker library" ON)
 option(SMACKER_BUILD_SHARED "Build the shared libsmacker library" ON)
-option(SMACKER_BUILD_TOOLS "Build the driver and smk2avi example programs" OFF)
+option(SMACKER_BUILD_TOOLS "Build the example programs" OFF)
+set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
+  "SDL version for smk_sdl_player: AUTO, 2 or 3")
+set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
 
 if(NOT SMACKER_BUILD_STATIC AND NOT SMACKER_BUILD_SHARED)
   message(FATAL_ERROR
@@ -78,6 +81,59 @@ if(SMACKER_BUILD_TOOLS)
     smacker_set_compile_settings(${tool})
     target_link_libraries(${tool} PRIVATE ${SMACKER_LINK_TARGET})
   endforeach()
+
+  # The SDL player links the static library, so it needs both SDL and
+  # SMACKER_BUILD_STATIC. Prefer SDL3, fall back to SDL2, and skip the
+  # example rather than breaking the rest of the tool build.
+  if(NOT SMACKER_SDL_VERSION MATCHES "^(AUTO|2|3)$")
+    message(FATAL_ERROR
+      "SMACKER_SDL_VERSION must be AUTO, 2 or 3 (got '${SMACKER_SDL_VERSION}')")
+  endif()
+
+  if(NOT SMACKER_BUILD_STATIC)
+    message(WARNING
+      "smk_sdl_player requires SMACKER_BUILD_STATIC=ON; skipping it.")
+  else()
+    set(SMACKER_SDL_TARGET "")
+    set(SMACKER_USE_SDL3 OFF)
+
+    if(SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "3")
+      find_package(SDL3 QUIET CONFIG)
+      if(SDL3_FOUND)
+        set(SMACKER_SDL_TARGET SDL3::SDL3)
+        set(SMACKER_USE_SDL3 ON)
+      elseif(SMACKER_SDL_VERSION STREQUAL "3")
+        message(FATAL_ERROR
+          "SMACKER_SDL_VERSION=3 but no SDL3 CMake package was found.")
+      endif()
+    endif()
+
+    if(SMACKER_SDL_TARGET STREQUAL "" AND
+        (SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "2"))
+      find_package(SDL2 QUIET CONFIG)
+      if(SDL2_FOUND)
+        set(SMACKER_SDL_TARGET SDL2::SDL2)
+      elseif(SMACKER_SDL_VERSION STREQUAL "2")
+        message(FATAL_ERROR
+          "SMACKER_SDL_VERSION=2 but no SDL2 CMake package was found.")
+      endif()
+    endif()
+
+    if(SMACKER_SDL_TARGET STREQUAL "")
+      message(WARNING "SDL2/SDL3 not found; skipping smk_sdl_player.")
+    else()
+      add_executable(smk_sdl_player src/tools/smk_sdl_player.c)
+      smacker_set_compile_settings(smk_sdl_player)
+      if(SMACKER_USE_SDL3)
+        target_compile_definitions(smk_sdl_player PRIVATE SMK_USE_SDL3=1)
+      elseif(TARGET SDL2::SDL2main)
+        target_link_libraries(smk_sdl_player PRIVATE SDL2::SDL2main)
+      endif()
+      target_link_libraries(smk_sdl_player PRIVATE
+        smacker_static ${SMACKER_SDL_TARGET})
+      message(STATUS "smk_sdl_player: linking smacker_static and ${SMACKER_SDL_TARGET}")
+    endif()
+  endif()
 endif()
 
 if(SMACKER_BUILD_STATIC)
