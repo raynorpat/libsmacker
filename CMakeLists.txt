@@ -69,3 +69,13 @@ else()
 endif()
 
 add_library(Smacker::smacker ALIAS ${SMACKER_LINK_TARGET})
+
+if(SMACKER_BUILD_TOOLS)
+  add_executable(driver driver.c)
+  add_executable(smk2avi smk2avi.c)
+  foreach(tool driver smk2avi)
+    # The library's PUBLIC include directory propagates through the link.
+    smacker_set_compile_settings(${tool})
+    target_link_libraries(${tool} PRIVATE ${SMACKER_LINK_TARGET})
+  endforeach()
+endif()
