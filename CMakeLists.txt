@@ -46,13 +46,13 @@ function(smacker_set_library_settings target)
 endfunction()
 
 if(SMACKER_BUILD_STATIC)
-  add_library(smacker_static STATIC src/smacker.c src/format/bitio.c src/format/huffman.c)
+  add_library(smacker_static STATIC src/smacker.c src/format/bitio.c src/format/huffman.c src/format/palette.c)
   smacker_set_library_settings(smacker_static)
   set_target_properties(smacker_static PROPERTIES OUTPUT_NAME smacker)
 endif()
 
 if(SMACKER_BUILD_SHARED)
-  add_library(smacker_shared SHARED src/smacker.c src/format/bitio.c src/format/huffman.c)
+  add_library(smacker_shared SHARED src/smacker.c src/format/bitio.c src/format/huffman.c src/format/palette.c)
   smacker_set_library_settings(smacker_shared)
   set_target_properties(smacker_shared PROPERTIES
     OUTPUT_NAME smacker

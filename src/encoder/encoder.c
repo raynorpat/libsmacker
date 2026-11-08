@@ -3,6 +3,7 @@
 #include "container.h"
 #include "encoder_internal.h"
 #include "format/huffman.h"
+#include "format/palette.h"
 #include "quantize.h"
 #include "video.h"
 
@@ -31,40 +32,6 @@ static int keyframe_at(unsigned index, unsigned interval)
     if (interval == 0)
         return 0;
     return index % interval == 0;
-}
-
-/*
- * Encode the palette as one chunk: three-byte set blocks for the entries we
- * have and skip blocks for everything else. Returns the chunk size in bytes.
- */
-static size_t build_palette_chunk(const smk_palette *palette, uint8_t *out)
-{
-    size_t pos = 1;
-    unsigned i = 0;
-
-    while (i < 256) {
-        if (i < palette->count) {
-            out[pos++] = palette->entry[i].r;
-            out[pos++] = palette->entry[i].g;
-            out[pos++] = palette->entry[i].b;
-            i++;
-        } else {
-            unsigned run = 0;
-
-            while (i + run < 256 && run < 128 &&
-                   !(i + run < palette->count))
-                run++;
-            if (run == 0)
-                run = 1;
-            out[pos++] = (uint8_t)(0x80u | (run - 1));
-            i += run;
-        }
-    }
-
-    while (pos % 4 != 0)
-        out[pos++] = 0;
-    out[0] = (uint8_t)(pos / 4);
-    return pos;
 }
 
 unsigned smk_enc_clamp_colors(unsigned colors)
@@ -505,7 +472,9 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         prev_frame_palette = choice.frame_palette;
         keyframe = keyframe_at(i, interval) || emit_palette;
         palette_size = emit_palette
-            ? build_palette_chunk(choice.palette, palette_chunk) : 0;
+            ? smk_palette_write_chunk(&choice.palette->entry[0].r,
+                                      choice.palette->count, palette_chunk)
+            : 0;
 
         smk_bw_init(&frame_bits);
         if (smk_video_encode_frame(&video, indices, keyframe, trees,
@@ -614,7 +583,9 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
              (choice.frame_palette || prev_frame_palette));
         ring_keyframe = emit_palette ? 1 : 0;
         palette_size = emit_palette
-            ? build_palette_chunk(choice.palette, palette_chunk) : 0;
+            ? smk_palette_write_chunk(&choice.palette->entry[0].r,
+                                      choice.palette->count, palette_chunk)
+            : 0;
 
         smk_bw_init(&frame_bits);
         if (smk_video_encode_frame(&video, indices, ring_keyframe, trees,

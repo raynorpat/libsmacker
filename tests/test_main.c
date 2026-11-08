@@ -15,6 +15,11 @@ void test_huffman_absent(void);
 void test_huffman_single_symbol(void);
 void test_huffman_roundtrip(void);
 void test_huffman_cache_lookup(void);
+void test_palette_palmap(void);
+void test_palette_write_one_color(void);
+void test_palette_skip_preserves(void);
+void test_palette_copy_from_previous(void);
+void test_palette_rejects_deep_color(void);
 void test_tga_24_uncompressed_bottom_up(void);
 void test_tga_32_rle_top_down_alpha(void);
 void test_tga_8_colormapped(void);
@@ -99,6 +104,11 @@ static const smk_test_case tests[] = {
     { "huffman_single_symbol", test_huffman_single_symbol },
     { "huffman_roundtrip", test_huffman_roundtrip },
     { "huffman_cache_lookup", test_huffman_cache_lookup },
+    { "palette_palmap", test_palette_palmap },
+    { "palette_write_one_color", test_palette_write_one_color },
+    { "palette_skip_preserves", test_palette_skip_preserves },
+    { "palette_copy_from_previous", test_palette_copy_from_previous },
+    { "palette_rejects_deep_color", test_palette_rejects_deep_color },
     { "tga_24_uncompressed_bottom_up", test_tga_24_uncompressed_bottom_up },
     { "tga_32_rle_top_down_alpha", test_tga_32_rle_top_down_alpha },
     { "tga_8_colormapped", test_tga_8_colormapped },

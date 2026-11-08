@@ -4,6 +4,7 @@ add_executable(smk_tests
   test_cli.c
   test_bitio.c
   test_huffman.c
+  test_palette.c
   test_image_tga.c
   test_image_bmp.c
   test_image_pcx.c

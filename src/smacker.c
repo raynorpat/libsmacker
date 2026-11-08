@@ -13,6 +13,7 @@
 
 #include "format/bitio.h"
 #include "format/huffman.h"
+#include "format/palette.h"
 #include "smk_malloc.h"
 
 #include <assert.h>
@@ -696,111 +697,6 @@ unsigned long smk_get_audio_size(const smk object, const unsigned char t)
 	return object->audio[t].buffer_size;
 }
 
-/* Decompresses a palette-frame. */
-static char smk_render_palette(struct smk_video_t * s, unsigned char * p, unsigned long size)
-{
-	/* Index into palette */
-	unsigned short i = 0;
-	/* Helper variables */
-	unsigned short count, src;
-	static unsigned char oldPalette[256][3];
-	/* Smacker palette map: smk colors are 6-bit, this table expands them to 8. */
-	const unsigned char palmap[64] = {
-		0x00, 0x04, 0x08, 0x0C, 0x10, 0x14, 0x18, 0x1C,
-		0x20, 0x24, 0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C,
-		0x41, 0x45, 0x49, 0x4D, 0x51, 0x55, 0x59, 0x5D,
-		0x61, 0x65, 0x69, 0x6D, 0x71, 0x75, 0x79, 0x7D,
-		0x82, 0x86, 0x8A, 0x8E, 0x92, 0x96, 0x9A, 0x9E,
-		0xA2, 0xA6, 0xAA, 0xAE, 0xB2, 0xB6, 0xBA, 0xBE,
-		0xC3, 0xC7, 0xCB, 0xCF, 0xD3, 0xD7, 0xDB, 0xDF,
-		0xE3, 0xE7, 0xEB, 0xEF, 0xF3, 0xF7, 0xFB, 0xFF
-	};
-	/* null check */
-	assert(s);
-	assert(p);
-	/* Copy palette to old palette */
-	memcpy(oldPalette, s->palette, 256 * 3);
-
-	/* Loop until palette is complete, or we are out of bytes to process */
-	while ((i < 256) && (size > 0)) {
-		if ((*p) & 0x80) {
-			/* 0x80: Skip block
-				(preserve C+1 palette entries from previous palette) */
-			count = ((*p) & 0x7F) + 1;
-			p ++;
-			size --;
-
-			/* check for overflow condition */
-			if (i + count > 256) {
-				fprintf(stderr, "libsmacker::palette_render(s,p,size) - ERROR: overflow, 0x80 attempt to skip %d entries from %d\n", count, i);
-				goto error;
-			}
-
-			/* finally: advance the index. */
-			i += count;
-		} else if ((*p) & 0x40) {
-			/* 0x40: Color-shift block
-				Copy (c + 1) color entries of the previous palette,
-				starting from entry (s),
-				to the next entries of the new palette. */
-			if (size < 2) {
-				fputs("libsmacker::palette_render(s,p,size) - ERROR: 0x40 ran out of bytes for copy\n", stderr);
-				goto error;
-			}
-
-			/* pick "count" items to copy */
-			count = ((*p) & 0x3F) + 1;
-			p ++;
-			size --;
-			/* start offset of old palette */
-			src = *p;
-			p ++;
-			size --;
-
-			/* overflow: see if we write/read beyond 256 colors */
-			if (i + count > 256 || src + count > 256) {
-				fprintf(stderr, "libsmacker::palette_render(s,p,size) - ERROR: overflow, 0x40 attempt to copy %d entries from %d to %d\n", count, src, i);
-				goto error;
-			}
-
-			/* OK!  Copy the color-palette entries. */
-			memmove(&s->palette[i][0], &oldPalette[src][0], count * 3);
-			i += count;
-		} else {
-			/* 0x00: Set Color block
-				Direct-set the next 3 bytes for palette index */
-			if (size < 3) {
-				fprintf(stderr, "libsmacker::palette_render - ERROR: 0x3F ran out of bytes for copy, size=%lu\n", size);
-				goto error;
-			}
-
-			for (count = 0; count < 3; count ++) {
-				if (*p > 0x3F) {
-					fprintf(stderr, "libsmacker::palette_render - ERROR: palette index exceeds 0x3F (entry [%u][%u])\n", i, count);
-					goto error;
-				}
-
-				s->palette[i][count] = palmap[*p];
-				p++;
-				size --;
-			}
-
-			i ++;
-		}
-	}
-
-	if (i < 256) {
-		fprintf(stderr, "libsmacker::palette_render - ERROR: did not completely fill palette (idx=%u)\n", i);
-		goto error;
-	}
-
-	return 0;
-error:
-	/* Error, return -1
-		The new palette probably has errors but is preferrable to a black screen */
-	return -1;
-}
-
 static char smk_render_video(struct smk_video_t * s, unsigned char * p, unsigned int size)
 {
 	unsigned char * t = s->frame;
@@ -1188,7 +1084,7 @@ static char smk_render(smk s)
 
 		/* If video rendering enabled, kick this off for decode. */
 		if (s->video.enable)
-			smk_render_palette(&(s->video), p + 1, size - 1);
+			smk_palette_apply((uint8_t *)s->video.palette, p + 1, size - 1);
 
 		p += size;
 		i -= size;
