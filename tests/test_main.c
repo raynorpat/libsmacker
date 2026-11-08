@@ -18,6 +18,11 @@ void test_tga_32_rle_top_down_alpha(void);
 void test_tga_8_colormapped(void);
 void test_tga_truncated(void);
 void test_image_unsupported_format(void);
+void test_bmp_24_bottom_up(void);
+void test_bmp_32_top_down(void);
+void test_bmp_8_palette(void);
+void test_bmp_odd_width_padding(void);
+void test_bmp_truncated(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -35,6 +40,11 @@ static const smk_test_case tests[] = {
     { "tga_8_colormapped", test_tga_8_colormapped },
     { "tga_truncated", test_tga_truncated },
     { "image_unsupported_format", test_image_unsupported_format },
+    { "bmp_24_bottom_up", test_bmp_24_bottom_up },
+    { "bmp_32_top_down", test_bmp_32_top_down },
+    { "bmp_8_palette", test_bmp_8_palette },
+    { "bmp_odd_width_padding", test_bmp_odd_width_padding },
+    { "bmp_truncated", test_bmp_truncated },
     { NULL, NULL }
 };
 

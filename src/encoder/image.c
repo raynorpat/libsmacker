@@ -313,6 +313,267 @@ static smk_enc_status load_tga(FILE *fp, const uint8_t background[3],
     return SMK_ENC_OK;
 }
 
+static unsigned mask_component(uint32_t value, uint32_t mask)
+{
+    unsigned shift = 0;
+    uint32_t max;
+
+    if (mask == 0)
+        return 0;
+    while (shift < 32 && ((mask >> shift) & 1u) == 0)
+        shift++;
+    if (shift >= 32)
+        return 0;
+    max = mask >> shift;
+    return (unsigned)((((value & mask) >> shift) * 255u + max / 2) / max);
+}
+
+static smk_enc_status load_bmp(FILE *fp, const uint8_t background[3],
+                               uint8_t **rgb, unsigned *width, unsigned *height,
+                               char *err, size_t errlen)
+{
+    uint8_t file_header[14];
+    uint8_t size_bytes[4];
+    uint8_t *dib = NULL;
+    uint32_t pixel_offset;
+    uint32_t dib_size;
+    int32_t signed_width;
+    int32_t signed_height;
+    unsigned bitcount;
+    uint32_t compression;
+    uint32_t colors_used;
+    uint32_t masks[4] = { 0, 0, 0, 0 };
+    unsigned mask_count = 0;
+    unsigned w;
+    unsigned h;
+    int top_down;
+    size_t row_size;
+    size_t total;
+    uint8_t *row = NULL;
+    uint8_t *pixels = NULL;
+    uint8_t *palette = NULL;
+    unsigned palette_entries = 0;
+    smk_enc_status status = SMK_ENC_ERR_INPUT;
+    unsigned y;
+
+    if (read_exact(fp, file_header, sizeof(file_header)) != 0)
+        return fail(err, errlen, "truncated BMP header");
+    if (file_header[0] != 'B' || file_header[1] != 'M')
+        return fail(err, errlen, "not a BMP file");
+    pixel_offset = (uint32_t)file_header[10] |
+                   ((uint32_t)file_header[11] << 8) |
+                   ((uint32_t)file_header[12] << 16) |
+                   ((uint32_t)file_header[13] << 24);
+
+    if (read_exact(fp, size_bytes, 4) != 0)
+        return fail(err, errlen, "truncated BMP header");
+    dib_size = (uint32_t)size_bytes[0] | ((uint32_t)size_bytes[1] << 8) |
+               ((uint32_t)size_bytes[2] << 16) |
+               ((uint32_t)size_bytes[3] << 24);
+    if (dib_size < 40 || dib_size > 4096)
+        return fail(err, errlen, "unsupported BMP header size");
+
+    dib = (uint8_t *)malloc(dib_size - 4);
+    if (dib == NULL)
+        return fail(err, errlen, "out of memory reading BMP header");
+    if (read_exact(fp, dib, dib_size - 4) != 0) {
+        free(dib);
+        return fail(err, errlen, "truncated BMP header");
+    }
+
+    signed_width = (int32_t)((uint32_t)dib[0] | ((uint32_t)dib[1] << 8) |
+                             ((uint32_t)dib[2] << 16) |
+                             ((uint32_t)dib[3] << 24));
+    signed_height = (int32_t)((uint32_t)dib[4] | ((uint32_t)dib[5] << 8) |
+                              ((uint32_t)dib[6] << 16) |
+                              ((uint32_t)dib[7] << 24));
+    bitcount = (unsigned)dib[10] | ((unsigned)dib[11] << 8);
+    compression = (uint32_t)dib[12] | ((uint32_t)dib[13] << 8) |
+                  ((uint32_t)dib[14] << 16) | ((uint32_t)dib[15] << 24);
+    colors_used = (uint32_t)dib[28] | ((uint32_t)dib[29] << 8) |
+                  ((uint32_t)dib[30] << 16) | ((uint32_t)dib[31] << 24);
+
+    if (signed_width <= 0 || signed_height == 0) {
+        free(dib);
+        return fail(err, errlen, "BMP image has invalid dimensions");
+    }
+    if (((unsigned)dib[8] | ((unsigned)dib[9] << 8)) != 1) {
+        free(dib);
+        return fail(err, errlen, "BMP image must have one plane");
+    }
+    if (bitcount != 8 && bitcount != 16 && bitcount != 24 && bitcount != 32) {
+        free(dib);
+        return fail(err, errlen, "unsupported BMP color depth");
+    }
+    if (compression != 0 && compression != 3) {
+        free(dib);
+        return fail(err, errlen, "compressed BMP images are not supported");
+    }
+    if (compression == 3 && bitcount != 16 && bitcount != 32) {
+        free(dib);
+        return fail(err, errlen, "BMP bitfields need 16- or 32-bit pixels");
+    }
+
+    if (compression == 3) {
+        if (dib_size >= 56) {
+            unsigned i;
+            for (i = 0; i < 4; i++) {
+                size_t at = 36 + (size_t)i * 4;
+                masks[i] = (uint32_t)dib[at] |
+                           ((uint32_t)dib[at + 1] << 8) |
+                           ((uint32_t)dib[at + 2] << 16) |
+                           ((uint32_t)dib[at + 3] << 24);
+            }
+            mask_count = 4;
+        } else {
+            uint8_t raw[12];
+            unsigned i;
+            if (read_exact(fp, raw, sizeof(raw)) != 0) {
+                free(dib);
+                return fail(err, errlen, "truncated BMP bitfields");
+            }
+            for (i = 0; i < 3; i++) {
+                masks[i] = (uint32_t)raw[i * 4] |
+                           ((uint32_t)raw[i * 4 + 1] << 8) |
+                           ((uint32_t)raw[i * 4 + 2] << 16) |
+                           ((uint32_t)raw[i * 4 + 3] << 24);
+            }
+            mask_count = 3;
+        }
+        if (masks[0] == 0 || masks[1] == 0 || masks[2] == 0) {
+            free(dib);
+            return fail(err, errlen, "BMP bitfields are incomplete");
+        }
+    }
+    (void)mask_count;
+
+    w = (unsigned)signed_width;
+    h = signed_height < 0 ? (unsigned)(-signed_height)
+                          : (unsigned)signed_height;
+    top_down = signed_height < 0;
+
+    total = (size_t)w * h;
+    if (total > IMAGE_MAX_PIXELS) {
+        free(dib);
+        return fail(err, errlen, "BMP image is too large");
+    }
+    row_size = (((size_t)w * bitcount + 31) / 32) * 4;
+
+    if (bitcount == 8) {
+        unsigned i;
+        uint8_t entry[4];
+
+        palette_entries = colors_used == 0 ? 256 : colors_used;
+        if (palette_entries > 256) {
+            free(dib);
+            return fail(err, errlen, "BMP palette is too large");
+        }
+        if (fseek(fp, (long)(14 + dib_size), SEEK_SET) != 0) {
+            free(dib);
+            return fail(err, errlen, "truncated BMP palette");
+        }
+        palette = (uint8_t *)malloc((size_t)palette_entries * 3);
+        if (palette == NULL) {
+            free(dib);
+            return fail(err, errlen, "out of memory reading BMP palette");
+        }
+        for (i = 0; i < palette_entries; i++) {
+            if (read_exact(fp, entry, 4) != 0) {
+                free(palette);
+                free(dib);
+                return fail(err, errlen, "truncated BMP palette");
+            }
+            palette[i * 3] = entry[2];
+            palette[i * 3 + 1] = entry[1];
+            palette[i * 3 + 2] = entry[0];
+        }
+    }
+
+    row = (uint8_t *)malloc(row_size == 0 ? 1 : row_size);
+    pixels = (uint8_t *)malloc(total * 3);
+    if (row == NULL || pixels == NULL) {
+        free(row);
+        free(pixels);
+        free(palette);
+        free(dib);
+        return fail(err, errlen, "out of memory reading BMP image");
+    }
+
+    if (fseek(fp, (long)pixel_offset, SEEK_SET) != 0) {
+        status = fail(err, errlen, "truncated BMP pixel data");
+        goto done;
+    }
+
+    for (y = 0; y < h; y++) {
+        unsigned x;
+        size_t out_y = top_down ? y : (h - 1 - y);
+
+        if (read_exact(fp, row, row_size) != 0) {
+            status = fail(err, errlen, "truncated BMP pixel data");
+            goto done;
+        }
+        for (x = 0; x < w; x++) {
+            uint8_t *out = pixels + (out_y * w + x) * 3;
+
+            if (bitcount == 8) {
+                unsigned index = row[x];
+                if (index >= palette_entries) {
+                    status = fail(err, errlen, "BMP pixel index out of range");
+                    goto done;
+                }
+                memcpy(out, palette + (size_t)index * 3, 3);
+            } else if (bitcount == 24) {
+                const uint8_t *src = row + (size_t)x * 3;
+                out[0] = src[2];
+                out[1] = src[1];
+                out[2] = src[0];
+            } else {
+                uint32_t value;
+                if (bitcount == 16)
+                    value = (uint32_t)row[(size_t)x * 2] |
+                            ((uint32_t)row[(size_t)x * 2 + 1] << 8);
+                else
+                    value = (uint32_t)row[(size_t)x * 4] |
+                            ((uint32_t)row[(size_t)x * 4 + 1] << 8) |
+                            ((uint32_t)row[(size_t)x * 4 + 2] << 16) |
+                            ((uint32_t)row[(size_t)x * 4 + 3] << 24);
+
+                if (compression == 0) {
+                    if (bitcount == 16) {
+                        out[0] = (uint8_t)expand5((value >> 10) & 31u);
+                        out[1] = (uint8_t)expand5((value >> 5) & 31u);
+                        out[2] = (uint8_t)expand5(value & 31u);
+                    } else {
+                        out[0] = (uint8_t)(value >> 16);
+                        out[1] = (uint8_t)(value >> 8);
+                        out[2] = (uint8_t)value;
+                    }
+                } else {
+                    unsigned r = mask_component(value, masks[0]);
+                    unsigned g = mask_component(value, masks[1]);
+                    unsigned b = mask_component(value, masks[2]);
+                    unsigned a = masks[3] == 0
+                        ? 255u : mask_component(value, masks[3]);
+                    blend(out, r, g, b, a, background);
+                }
+            }
+        }
+    }
+
+    status = SMK_ENC_OK;
+    *rgb = pixels;
+    *width = w;
+    *height = h;
+    pixels = NULL;
+
+done:
+    free(pixels);
+    free(row);
+    free(palette);
+    free(dib);
+    return status;
+}
+
 smk_enc_status smk_image_load(const char *path, const uint8_t background[3],
                               uint8_t **rgb, unsigned *width, unsigned *height,
                               char *err, size_t errlen)
@@ -332,8 +593,17 @@ smk_enc_status smk_image_load(const char *path, const uint8_t background[3],
     ext = extension_of(path);
     if (ext == NULL)
         return fail(err, errlen, "image file has no extension");
-    if (extension_is(ext, "bmp"))
-        return fail(err, errlen, "BMP images are not supported yet");
+    if (extension_is(ext, "bmp")) {
+        fp = fopen(path, "rb");
+        if (fp == NULL) {
+            if (err != NULL && errlen > 0)
+                snprintf(err, errlen, "cannot open image: %s", path);
+            return SMK_ENC_ERR_INPUT;
+        }
+        status = load_bmp(fp, background, rgb, width, height, err, errlen);
+        fclose(fp);
+        return status;
+    }
     if (extension_is(ext, "pcx"))
         return fail(err, errlen, "PCX images are not supported yet");
     if (!extension_is(ext, "tga"))

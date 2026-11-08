@@ -5,6 +5,7 @@ add_executable(smk_tests
   test_bitio.c
   test_huffman.c
   test_image_tga.c
+  test_image_bmp.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 
