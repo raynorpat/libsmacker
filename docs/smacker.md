@@ -811,7 +811,7 @@ document follows the implementations.
 - **Corrupt input is only partially validated.** Huffman trees, palette blocks,
   and chunk lengths are checked in many places, but several paths trust header
   values. Treat decoding of untrusted files as unsafe.
-- **The bundled encoder writes a subset.** `build_smk` produces SMK2 files with
+- **The bundled encoder writes a subset.** `smk_build` produces SMK2 files with
   raw PCM audio and 4x4 blocks only; see [encoder.md](encoder.md). The decoder
   itself remains decode-only.
 - **Single-threaded.** The palette decoder uses a file-static scratch buffer;

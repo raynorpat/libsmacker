@@ -1,6 +1,6 @@
 # Encoder
 
-This document covers `build_smk`, the libsmacker encoder frontend, and the
+This document covers `smk_build`, the libsmacker encoder frontend, and the
 reusable encoder sources in `src/encoder/`. The encoder writes SMK2 files with
 palette video and uncompressed PCM audio. It is intentionally the mirror image
 of the decoder: every file it writes can be opened, verified, and played by
@@ -29,13 +29,13 @@ libsmacker.
 ## Building
 
 The encoder is built as part of the tools target. It has no separate installed
-library: `src/encoder/*.c` is compiled directly into `build_smk` and the test
+library: `src/encoder/*.c` is compiled directly into `smk_build` and the test
 binary.
 
 ```sh
 cmake -S . -B build -DSMACKER_BUILD_TOOLS=ON -DSMACKER_BUILD_TESTS=ON
 cmake --build build
-./build/build_smk --help
+./build/smk_build --help
 ```
 
 `SMACKER_BUILD_TESTS=ON` currently requires `SMACKER_BUILD_TOOLS=ON` because the
@@ -44,7 +44,7 @@ CLI smoke tests run the built tool.
 ## Command line
 
 ```
-usage: build_smk <input> [-o output.smk] [options]
+usage: smk_build <input> [-o output.smk] [options]
 ```
 
 `<input>` is either a directory of still frames or a `.avi` file. The output
@@ -55,13 +55,13 @@ Examples:
 
 ```sh
 # Frames plus a separate WAV track.
-build_smk frames/ --audio soundtrack.wav -o intro.smk --verify
+smk_build frames/ --audio soundtrack.wav -o intro.smk --verify
 
 # AVI with its own video and audio tracks.
-build_smk capture.avi -o capture.smk --palette adaptive --dither ordered
+smk_build capture.avi -o capture.smk --palette adaptive --dither ordered
 
 # A seamless looping background with a keyframe every 60 frames.
-build_smk loop/ --ring --keyframe-interval 60 -o loop.smk
+smk_build loop/ --ring --keyframe-interval 60 -o loop.smk
 ```
 
 ### Options

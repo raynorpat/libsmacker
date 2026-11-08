@@ -74,7 +74,7 @@ endif()
 
 add_library(Smacker::smacker ALIAS ${SMACKER_LINK_TARGET})
 
-# Reusable encoder sources, compiled directly into build_smk and the tests.
+# Reusable encoder sources, compiled directly into smk_build and the tests.
 set(SMACKER_ENCODER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/encoder.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/bitio.c
@@ -87,7 +87,7 @@ set(SMACKER_ENCODER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/container.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/verify.c)
 set(SMACKER_TOOL_INPUT_SOURCES
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/build_smk/image_dir.c)
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/smk_build/image_dir.c)
 
 if(SMACKER_BUILD_TOOLS)
   add_executable(driver src/tools/driver.c)
@@ -98,15 +98,15 @@ if(SMACKER_BUILD_TOOLS)
     target_link_libraries(${tool} PRIVATE ${SMACKER_LINK_TARGET})
   endforeach()
 
-  add_executable(build_smk
-    src/tools/build_smk/main.c
+  add_executable(smk_build
+    src/tools/smk_build/main.c
     ${SMACKER_TOOL_INPUT_SOURCES}
     ${SMACKER_ENCODER_SOURCES})
-  target_include_directories(build_smk PRIVATE
+  target_include_directories(smk_build PRIVATE
     src/encoder
-    src/tools/build_smk)
-  smacker_set_compile_settings(build_smk)
-  target_link_libraries(build_smk PRIVATE ${SMACKER_LINK_TARGET})
+    src/tools/smk_build)
+  smacker_set_compile_settings(smk_build)
+  target_link_libraries(smk_build PRIVATE ${SMACKER_LINK_TARGET})
 
   # The SDL player links the static library, so it needs both SDL and
   # SMACKER_BUILD_STATIC. Prefer SDL3, fall back to SDL2, and skip the

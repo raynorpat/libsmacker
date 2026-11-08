@@ -7,7 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define BUILD_SMK_VERSION "1.0.0"
+#define SMK_BUILD_VERSION "1.0.0"
 
 static void usage(FILE *out, const char *program)
 {
@@ -130,7 +130,7 @@ static int is_avi_path(const char *path)
 
 static int usage_error(const char *program, const char *message)
 {
-    fprintf(stderr, "build_smk: %s\n", message);
+    fprintf(stderr, "smk_build: %s\n", message);
     usage(stderr, program);
     return SMK_ENC_ERR_USAGE;
 }
@@ -159,7 +159,7 @@ int main(int argc, char **argv)
             return SMK_ENC_OK;
         }
         if (strcmp(arg, "--version") == 0) {
-            printf("build_smk %s\n", BUILD_SMK_VERSION);
+            printf("smk_build %s\n", SMK_BUILD_VERSION);
             return SMK_ENC_OK;
         }
         if (strcmp(arg, "-o") == 0 || strcmp(arg, "--output") == 0) {
@@ -232,7 +232,7 @@ int main(int argc, char **argv)
         } else if (strcmp(arg, "--quiet") == 0) {
             options.verbose = 0;
         } else if (arg[0] == '-') {
-            fprintf(stderr, "build_smk: unknown option %s\n", arg);
+            fprintf(stderr, "smk_build: unknown option %s\n", arg);
             return SMK_ENC_ERR_USAGE;
         } else if (input == NULL) {
             input = arg;
@@ -264,7 +264,7 @@ int main(int argc, char **argv)
     }
     if (status != SMK_ENC_OK) {
         if (err[0] != '\0')
-            fprintf(stderr, "build_smk: %s\n", err);
+            fprintf(stderr, "smk_build: %s\n", err);
         if (avi_input)
             smk_avi_close(&source);
         else
@@ -273,11 +273,11 @@ int main(int argc, char **argv)
     }
 
     if (options.verbose)
-        fprintf(stderr, "build_smk: encoding %s\n", input);
+        fprintf(stderr, "smk_build: encoding %s\n", input);
     status = smk_enc_encode(&source, &options, output, err, sizeof(err));
     if (status == SMK_ENC_OK && options.verify) {
         if (options.verbose)
-            fprintf(stderr, "build_smk: verifying %s\n", output);
+            fprintf(stderr, "smk_build: verifying %s\n", output);
         status = smk_verify_file(output, &source, &options, err, sizeof(err));
     }
 
@@ -288,10 +288,10 @@ int main(int argc, char **argv)
 
     if (status != SMK_ENC_OK) {
         if (err[0] != '\0')
-            fprintf(stderr, "build_smk: %s\n", err);
+            fprintf(stderr, "smk_build: %s\n", err);
         return status;
     }
     if (options.verbose)
-        fprintf(stderr, "build_smk: wrote %s\n", output);
+        fprintf(stderr, "smk_build: wrote %s\n", output);
     return SMK_ENC_OK;
 }
