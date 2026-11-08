@@ -39,6 +39,12 @@ void test_image_dir_pads_and_replicates(void);
 void test_image_dir_strict_rejects_padding(void);
 void test_image_dir_empty(void);
 void test_image_dir_audio_pads_silence(void);
+void test_avi_smk2avi_layout(void);
+void test_avi_two_audio_tracks(void);
+void test_avi_interleaved_chunks(void);
+void test_avi_32bit_video(void);
+void test_avi_odd_width_stride(void);
+void test_avi_rejects_unsupported_codec(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -79,6 +85,12 @@ static const smk_test_case tests[] = {
       test_image_dir_strict_rejects_padding },
     { "image_dir_empty", test_image_dir_empty },
     { "image_dir_audio_pads_silence", test_image_dir_audio_pads_silence },
+    { "avi_smk2avi_layout", test_avi_smk2avi_layout },
+    { "avi_two_audio_tracks", test_avi_two_audio_tracks },
+    { "avi_interleaved_chunks", test_avi_interleaved_chunks },
+    { "avi_32bit_video", test_avi_32bit_video },
+    { "avi_odd_width_stride", test_avi_odd_width_stride },
+    { "avi_rejects_unsupported_codec", test_avi_rejects_unsupported_codec },
     { NULL, NULL }
 };
 
