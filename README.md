@@ -29,17 +29,18 @@ See the [webpage](http://libsmacker.sourceforge.net) for sample code and
 function documentation. The source package additionally includes a pair of
 driver programs:
 
-- `driver.c` - dumps all frames of a file to a `bmp/` subdirectory, and all
-  audio as raw streams to `out_*.raw` files in the current working directory.
-- `smk2avi.c` - converts `.smk` file(s) to AVI files: uncompressed 24-bit color
-  and a PCM audio stream.
+- `src/tools/driver.c` - dumps all frames of a file to a `bmp/` subdirectory, and
+  all audio as raw streams to `out_*.raw` files in the current working directory.
+- `src/tools/smk2avi.c` - converts `.smk` file(s) to AVI files: uncompressed
+  24-bit color and a PCM audio stream.
 
 Though the libraries are "bulletproofed" the sample apps are not: be cautious
 if you plan to implement in some critical environment.
 
 ## Building
 
-libsmacker uses CMake (3.16 or newer) and requires a C99 compiler.
+libsmacker uses CMake (3.16 or newer) and requires a C99 compiler. The library
+sources live in `src/`, and the example programs live in `src/tools/`.
 
 ```sh
 cmake -S . -B build

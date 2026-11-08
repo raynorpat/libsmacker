@@ -7,8 +7,8 @@ There are two ways to compile libsmacker for use in your own programs.
 ## 1. Direct compilation
 
 This method is preferred when you can't (or don't want to) build a system
-library. Simply take `smacker.c`, `smacker.h`, and `smk_malloc.h`, add them to
-your project, and compile them in as usual.
+library. Simply take `src/smacker.c`, `src/smacker.h`, and `src/smk_malloc.h`,
+add them to your project, and compile them in as usual.
 
 All external functions (those you, a user, would care about) are contained in
 `smacker.h` - so, in your main program, just:

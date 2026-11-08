@@ -1,1 +1,3 @@
-/build*/
+# CMake build directories
+/build/
+/build-*/

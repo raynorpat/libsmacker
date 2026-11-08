@@ -37,18 +37,18 @@ endfunction()
 function(smacker_set_library_settings target)
   smacker_set_compile_settings(${target})
   target_include_directories(${target} PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 endfunction()
 
 if(SMACKER_BUILD_STATIC)
-  add_library(smacker_static STATIC smacker.c)
+  add_library(smacker_static STATIC src/smacker.c)
   smacker_set_library_settings(smacker_static)
   set_target_properties(smacker_static PROPERTIES OUTPUT_NAME smacker)
 endif()
 
 if(SMACKER_BUILD_SHARED)
-  add_library(smacker_shared SHARED smacker.c)
+  add_library(smacker_shared SHARED src/smacker.c)
   smacker_set_library_settings(smacker_shared)
   set_target_properties(smacker_shared PROPERTIES
     OUTPUT_NAME smacker
@@ -71,8 +71,8 @@ endif()
 add_library(Smacker::smacker ALIAS ${SMACKER_LINK_TARGET})
 
 if(SMACKER_BUILD_TOOLS)
-  add_executable(driver driver.c)
-  add_executable(smk2avi smk2avi.c)
+  add_executable(driver src/tools/driver.c)
+  add_executable(smk2avi src/tools/smk2avi.c)
   foreach(tool driver smk2avi)
     # The library's PUBLIC include directory propagates through the link.
     smacker_set_compile_settings(${tool})
@@ -92,4 +92,4 @@ if(SMACKER_BUILD_SHARED)
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 endif()
 
-install(FILES smacker.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES src/smacker.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
