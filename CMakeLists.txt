@@ -13,6 +13,7 @@ include(GNUInstallDirs)
 option(SMACKER_BUILD_STATIC "Build the static libsmacker library" ON)
 option(SMACKER_BUILD_SHARED "Build the shared libsmacker library" ON)
 option(SMACKER_BUILD_TOOLS "Build the example programs" OFF)
+option(SMACKER_BUILD_TESTS "Build the encoder test suite" OFF)
 set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
   "SDL version for smk_sdl_player: AUTO, 2 or 3")
 set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
@@ -73,6 +74,11 @@ endif()
 
 add_library(Smacker::smacker ALIAS ${SMACKER_LINK_TARGET})
 
+# Reusable encoder sources, compiled directly into build_smk and the tests.
+set(SMACKER_ENCODER_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/encoder.c)
+set(SMACKER_TOOL_INPUT_SOURCES)
+
 if(SMACKER_BUILD_TOOLS)
   add_executable(driver src/tools/driver.c)
   add_executable(smk2avi src/tools/smk2avi.c)
@@ -81,6 +87,16 @@ if(SMACKER_BUILD_TOOLS)
     smacker_set_compile_settings(${tool})
     target_link_libraries(${tool} PRIVATE ${SMACKER_LINK_TARGET})
   endforeach()
+
+  add_executable(build_smk
+    src/tools/build_smk/main.c
+    ${SMACKER_TOOL_INPUT_SOURCES}
+    ${SMACKER_ENCODER_SOURCES})
+  target_include_directories(build_smk PRIVATE
+    src/encoder
+    src/tools/build_smk)
+  smacker_set_compile_settings(build_smk)
+  target_link_libraries(build_smk PRIVATE ${SMACKER_LINK_TARGET})
 
   # The SDL player links the static library, so it needs both SDL and
   # SMACKER_BUILD_STATIC. Prefer SDL3, fall back to SDL2, and skip the
@@ -134,6 +150,14 @@ if(SMACKER_BUILD_TOOLS)
       message(STATUS "smk_sdl_player: linking smacker_static and ${SMACKER_SDL_TARGET}")
     endif()
   endif()
+endif()
+
+if(SMACKER_BUILD_TESTS)
+  if(NOT SMACKER_BUILD_TOOLS)
+    message(FATAL_ERROR "SMACKER_BUILD_TESTS requires SMACKER_BUILD_TOOLS=ON")
+  endif()
+  enable_testing()
+  add_subdirectory(tests)
 endif()
 
 if(SMACKER_BUILD_STATIC)
