@@ -23,6 +23,10 @@ void test_bmp_32_top_down(void);
 void test_bmp_8_palette(void);
 void test_bmp_odd_width_padding(void);
 void test_bmp_truncated(void);
+void test_pcx_8bit_1plane_palette(void);
+void test_pcx_8bit_3plane_rgb(void);
+void test_pcx_1bit(void);
+void test_pcx_truncated(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -45,6 +49,10 @@ static const smk_test_case tests[] = {
     { "bmp_8_palette", test_bmp_8_palette },
     { "bmp_odd_width_padding", test_bmp_odd_width_padding },
     { "bmp_truncated", test_bmp_truncated },
+    { "pcx_8bit_1plane_palette", test_pcx_8bit_1plane_palette },
+    { "pcx_8bit_3plane_rgb", test_pcx_8bit_3plane_rgb },
+    { "pcx_1bit", test_pcx_1bit },
+    { "pcx_truncated", test_pcx_truncated },
     { NULL, NULL }
 };
 

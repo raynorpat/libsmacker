@@ -574,6 +574,171 @@ done:
     return status;
 }
 
+static int pcx_decode_rle(FILE *fp, uint8_t *dst, size_t size)
+{
+    size_t pos = 0;
+
+    while (pos < size) {
+        int byte = fgetc(fp);
+        unsigned count;
+
+        if (byte == EOF)
+            return -1;
+        if ((byte & 0xc0) != 0xc0) {
+            dst[pos++] = (uint8_t)byte;
+            continue;
+        }
+        count = (unsigned)(byte & 0x3f);
+        byte = fgetc(fp);
+        if (byte == EOF || count == 0 || count > size - pos)
+            return -1;
+        memset(dst + pos, byte, count);
+        pos += count;
+    }
+    return 0;
+}
+
+static smk_enc_status load_pcx(FILE *fp, const uint8_t background[3],
+                               uint8_t **rgb, unsigned *width, unsigned *height,
+                               char *err, size_t errlen)
+{
+    uint8_t header[128];
+    unsigned bpp;
+    unsigned planes;
+    unsigned bytes_per_line;
+    unsigned w;
+    unsigned h;
+    size_t pixel_bytes;
+    size_t total;
+    uint8_t *planes_data = NULL;
+    uint8_t *pixels = NULL;
+    uint8_t palette[256 * 3];
+    smk_enc_status status = SMK_ENC_ERR_INPUT;
+    unsigned y;
+
+    if (read_exact(fp, header, sizeof(header)) != 0)
+        return fail(err, errlen, "truncated PCX header");
+    if (header[0] != 0x0a)
+        return fail(err, errlen, "not a PCX file");
+    if (header[2] != 1)
+        return fail(err, errlen, "unsupported PCX encoding");
+
+    bpp = header[3];
+    planes = header[65];
+    bytes_per_line = (unsigned)header[66] | ((unsigned)header[67] << 8);
+    if (bpp != 1 && bpp != 2 && bpp != 4 && bpp != 8)
+        return fail(err, errlen, "unsupported PCX bit depth");
+    if (planes == 0)
+        return fail(err, errlen, "PCX image has no planes");
+    if (bpp == 8) {
+        if (planes != 1 && planes != 3 && planes != 4)
+            return fail(err, errlen, "unsupported PCX plane count");
+    } else if (planes != 1) {
+        return fail(err, errlen, "unsupported PCX plane count");
+    }
+
+    {
+        unsigned xmin = (unsigned)header[4] | ((unsigned)header[5] << 8);
+        unsigned ymin = (unsigned)header[6] | ((unsigned)header[7] << 8);
+        unsigned xmax = (unsigned)header[8] | ((unsigned)header[9] << 8);
+        unsigned ymax = (unsigned)header[10] | ((unsigned)header[11] << 8);
+
+        if (xmax < xmin || ymax < ymin)
+            return fail(err, errlen, "PCX image has invalid dimensions");
+        w = xmax - xmin + 1;
+        h = ymax - ymin + 1;
+    }
+    if (bytes_per_line == 0 ||
+        (size_t)bytes_per_line * 8 < (size_t)w * bpp)
+        return fail(err, errlen, "PCX scanline is too short");
+
+    total = (size_t)w * h;
+    if (total > IMAGE_MAX_PIXELS)
+        return fail(err, errlen, "PCX image is too large");
+    pixel_bytes = (size_t)h * planes * bytes_per_line;
+    if (pixel_bytes > IMAGE_MAX_PIXELS * 4)
+        return fail(err, errlen, "PCX image is too large");
+
+    planes_data = (uint8_t *)malloc(pixel_bytes);
+    pixels = (uint8_t *)malloc(total * 3);
+    if (planes_data == NULL || pixels == NULL) {
+        status = fail(err, errlen, "out of memory reading PCX image");
+        goto done;
+    }
+    if (pcx_decode_rle(fp, planes_data, pixel_bytes) != 0) {
+        status = fail(err, errlen, "truncated PCX image data");
+        goto done;
+    }
+
+    if (bpp == 8) {
+        if (planes == 1) {
+            uint8_t tail[769];
+
+            if (read_exact(fp, tail, sizeof(tail)) != 0 || tail[0] != 0x0c) {
+                status = fail(err, errlen,
+                              "PCX image has no 256-color palette");
+                goto done;
+            }
+            memcpy(palette, tail + 1, 768);
+        } else {
+            unsigned i;
+            for (i = 0; i < 16; i++) {
+                palette[i * 3] = header[16 + i * 3];
+                palette[i * 3 + 1] = header[16 + i * 3 + 1];
+                palette[i * 3 + 2] = header[16 + i * 3 + 2];
+            }
+        }
+    } else {
+        unsigned i;
+        for (i = 0; i < 16; i++) {
+            palette[i * 3] = header[16 + i * 3];
+            palette[i * 3 + 1] = header[16 + i * 3 + 1];
+            palette[i * 3 + 2] = header[16 + i * 3 + 2];
+        }
+    }
+
+    for (y = 0; y < h; y++) {
+        const uint8_t *row = planes_data + (size_t)y * planes * bytes_per_line;
+        unsigned x;
+
+        for (x = 0; x < w; x++) {
+            uint8_t *out = pixels + ((size_t)y * w + x) * 3;
+
+            if (bpp == 8) {
+                if (planes == 1) {
+                    unsigned index = row[x];
+                    memcpy(out, palette + (size_t)index * 3, 3);
+                } else if (planes == 3) {
+                    out[0] = row[x];
+                    out[1] = row[bytes_per_line + x];
+                    out[2] = row[(size_t)bytes_per_line * 2 + x];
+                } else {
+                    blend(out, row[x], row[bytes_per_line + x],
+                          row[(size_t)bytes_per_line * 2 + x],
+                          row[(size_t)bytes_per_line * 3 + x], background);
+                }
+            } else {
+                unsigned per_byte = 8 / bpp;
+                unsigned shift = 8 - bpp - (x % per_byte) * bpp;
+                unsigned index = (row[x / per_byte] >> shift) &
+                                 ((1u << bpp) - 1u);
+                memcpy(out, palette + (size_t)index * 3, 3);
+            }
+        }
+    }
+
+    status = SMK_ENC_OK;
+    *rgb = pixels;
+    *width = w;
+    *height = h;
+    pixels = NULL;
+
+done:
+    free(pixels);
+    free(planes_data);
+    return status;
+}
+
 smk_enc_status smk_image_load(const char *path, const uint8_t background[3],
                               uint8_t **rgb, unsigned *width, unsigned *height,
                               char *err, size_t errlen)
@@ -604,8 +769,17 @@ smk_enc_status smk_image_load(const char *path, const uint8_t background[3],
         fclose(fp);
         return status;
     }
-    if (extension_is(ext, "pcx"))
-        return fail(err, errlen, "PCX images are not supported yet");
+    if (extension_is(ext, "pcx")) {
+        fp = fopen(path, "rb");
+        if (fp == NULL) {
+            if (err != NULL && errlen > 0)
+                snprintf(err, errlen, "cannot open image: %s", path);
+            return SMK_ENC_ERR_INPUT;
+        }
+        status = load_pcx(fp, background, rgb, width, height, err, errlen);
+        fclose(fp);
+        return status;
+    }
     if (!extension_is(ext, "tga"))
         return fail(err, errlen, "unsupported image format");
 
