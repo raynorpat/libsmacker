@@ -377,6 +377,60 @@ void test_roundtrip_avi_unsupported_codec(void)
     free(b.data);
 }
 
+void test_roundtrip_avi_smk2avi_hdrl_size(void)
+{
+    avi_buf b;
+    char *path;
+    char *output;
+    smk_enc_options options;
+    smk_enc_source source;
+    char err[512] = { 0 };
+
+    /*
+     * smk2avi declares the hdrl LIST size four bytes too large, so the movie
+     * list appears to begin inside the header list. The reader must recover
+     * and still encode smk2avi's own output.
+     */
+    build_avi(&b, 4, 16, 16, 0, "DIB ", 1);
+    SMK_ASSERT(b.size > 20);
+    if (b.size <= 20) {
+        free(b.data);
+        return;
+    }
+    SMK_ASSERT(memcmp(b.data, "RIFF", 4) == 0);
+    SMK_ASSERT(memcmp(b.data + 12, "LIST", 4) == 0);
+    SMK_ASSERT(memcmp(b.data + 20, "hdrl", 4) == 0);
+    b.data[16] = (uint8_t)(b.data[16] + 4);
+
+    path = write_temp_avi("smk2avi-quirk.avi", &b);
+    output = make_output_path("smk2avi-quirk.smk");
+    SMK_ASSERT(path != NULL && output != NULL);
+    if (path == NULL || output == NULL) {
+        free(path);
+        free(output);
+        free(b.data);
+        return;
+    }
+
+    smk_enc_options_default(&options);
+    memset(&source, 0, sizeof(source));
+    SMK_ASSERT_EQ_INT(smk_avi_open(path, &options, &source, err, sizeof(err)),
+                      SMK_ENC_OK);
+    SMK_ASSERT_EQ_INT(source.frame_count, 4);
+    SMK_ASSERT_EQ_INT(source.audio_track_count, 1);
+    SMK_ASSERT_EQ_INT(smk_enc_encode(&source, &options, output, err,
+                                     sizeof(err)), SMK_ENC_OK);
+    SMK_ASSERT_EQ_INT(smk_verify_file(output, &source, &options, err,
+                                      sizeof(err)), SMK_ENC_OK);
+
+    smk_avi_close(&source);
+    remove(path);
+    remove(output);
+    free(path);
+    free(output);
+    free(b.data);
+}
+
 void test_avi_truncation_matrix(void)
 {
     static const unsigned divisors[] = { 0, 2, 4, 8, 16, 32 };

@@ -77,6 +77,8 @@ typedef struct {
     unsigned avih_height;
     int have_avih;
     int video_stream;
+    /* Set when a writer overstated the hdrl LIST size; see parse_hdrl(). */
+    long hdrl_end;
     int stream_to_track[100];
 } avi_header;
 
@@ -228,6 +230,7 @@ static smk_enc_status parse_hdrl(FILE *fp, long end, avi_header *header,
     while (ftell(fp) < end) {
         char id[5];
         uint32_t size;
+        long chunk_start = ftell(fp);
         long data_start;
 
         if (read_chunk_header(fp, id, &size) != 0)
@@ -260,6 +263,19 @@ static smk_enc_status parse_hdrl(FILE *fp, long end, avi_header *header,
                     fp, data_start + (long)size, header, err, errlen);
                 if (status != SMK_ENC_OK)
                     return status;
+            } else if (memcmp(type_raw, "movi", 4) == 0 ||
+                       memcmp(type_raw, "rec ", 4) == 0) {
+                /*
+                 * smk2avi declares hdrl four bytes too long (it counts its own
+                 * eight-byte header instead of just the type), so the movie
+                 * list appears to start inside hdrl. A movie list is never a
+                 * valid hdrl child, so treat this chunk as the real end of the
+                 * header list and let the caller read it as a sibling.
+                 */
+                header->hdrl_end = chunk_start;
+                return seek_to(fp, chunk_start) == 0
+                    ? SMK_ENC_OK
+                    : fail(err, errlen, "truncated AVI header list");
             }
         }
 
@@ -626,6 +642,7 @@ smk_enc_status smk_avi_open(const char *path,
         char id[5];
         uint32_t size;
         long data_start;
+        long next_offset;
 
         if (read_chunk_header(state->fp, id, &size) != 0)
             break;
@@ -635,6 +652,7 @@ smk_enc_status smk_avi_open(const char *path,
             status = fail(err, errlen, "truncated AVI chunk");
             goto done;
         }
+        next_offset = data_start + (long)size + (long)(size & 1u);
 
         if (strcmp(id, "LIST") == 0) {
             uint8_t type_raw[4];
@@ -653,6 +671,8 @@ smk_enc_status smk_avi_open(const char *path,
                                     errlen);
                 if (status != SMK_ENC_OK)
                     goto done;
+                if (header.hdrl_end != 0)
+                    next_offset = header.hdrl_end;
                 status = finish_header(&header, options, state, source, err,
                                        errlen);
                 if (status != SMK_ENC_OK)
@@ -671,8 +691,7 @@ smk_enc_status smk_avi_open(const char *path,
             }
         }
 
-        if (seek_to(state->fp, data_start + (long)size +
-                    (long)(size & 1u)) != 0) {
+        if (seek_to(state->fp, next_offset) != 0) {
             status = fail(err, errlen, "truncated AVI chunk");
             goto done;
         }

@@ -136,6 +136,8 @@ accepts the same structures written by similar tools:
   bit. Compressed audio and other video codecs are rejected with an
   `unsupported` error.
 - Interleaved and non-interleaved chunks are both accepted.
+- `smk2avi` declares the `hdrl` list four bytes too long; the reader detects
+  this and reads the movie list from its real position instead of failing.
 
 `--audio` cannot be combined with an AVI input because the AVI carries its own
 tracks. `--fps` is ignored for AVI; the stream's `dwRate`/`dwScale` (or the
