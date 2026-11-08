@@ -30,6 +30,22 @@ See the webpage for sample code and function documentation.  The source package 
 Though the libraries are "bulletproofed" the sample apps are not: be cautious if you plan to implement in some critical environment.
 
 ---
+Building
+---
+libsmacker uses CMake (3.16 or newer) and requires a C99 compiler.
+
+	cmake -S . -B build
+	cmake --build build
+
+This builds both static and shared libraries by default.  To also build the
+"driver" and "smk2avi" example programs, configure with:
+
+	cmake -S . -B build -DSMACKER_BUILD_TOOLS=ON
+	cmake --build build
+
+See INSTALL for the full list of build options and installation instructions.
+
+---
 Changelog
 ---
 1.2.0

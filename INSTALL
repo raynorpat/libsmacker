@@ -25,60 +25,61 @@ instead.  This allows you to redistribute it, or compile once / separately from
 your project, but with the advantage that linking against it does not create a
 run-time dependency.  See the next section.
 
-2. LIBRARY COMPILATION
+2. CMAKE BUILD
 
-libsmacker is distributed as a standard autotools-based package.  The build
-requires a GNU- or BSD-compatible "make" program.  Optionally, you may need
-autotools development packages installed to regenerate some distribution
-files if you wish to provide your own distribution.
+libsmacker is distributed with a CMake build.  It requires CMake 3.16 or newer
+and a C99 compiler.
 
-From the root directory, run "./configure" - this will perform some checks on
-your system to find the name of your C compiler, desired compilation flags,
-etc.  At the end of the configure process, there will be a generated Makefile.
-Simply run "make" to build your files.
+From the root directory, run:
 
-Compilation via autotools results in these files - though depending on your
-system, compilation output may go into a .libs/ subfolder:
+	cmake -S . -B build
+	cmake --build build
 
-* libsmacker.a
-* libsmacker.so (and several versioned symlinks)
-* driver
-* smk2avi
+By default this builds both a static and a shared libsmacker library.  Build
+outputs are written to the "build" directory.
 
-The "libsmacker.a" is a static library file which can be compiled in with an
-existing codebase:
+The build is controlled by these CMake options:
 
-	cc main.c extra.c libsmacker.a
+* SMACKER_BUILD_STATIC - build the static library (default: ON)
+* SMACKER_BUILD_SHARED - build the shared library (default: ON)
+* SMACKER_BUILD_TOOLS  - build the "driver" and "smk2avi" example programs
+                         (default: OFF)
 
-or (better)
+For example, to build the example programs as well:
 
-	cc main.c -lsmacker
+	cmake -S . -B build -DSMACKER_BUILD_TOOLS=ON
+	cmake --build build
 
-The "libsmacker.so" is a shared object file.  Compiling with this means it
-needs to be distributed along with your application; this might be useful to
-save space if you have multiple programs that use libsmacker.
+The default configuration is RelWithDebInfo for single-configuration
+generators such as Makefiles and Ninja.  To build with debugging symbols and
+assertions enabled, use:
 
-"driver" and "smk2avi" are example programs that show how to use libsmacker.
-They can also test a successful build.
+	cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+To change compiler flags, pass them through CMAKE_C_FLAGS, for example:
+
+	cmake -S . -B build -DCMAKE_C_FLAGS="-march=i686 -O2 -DNDEBUG"
 
 3. INSTALLATION
 
-The makefile from "configure" can be used to install the .so and corresponding
-.h file to correct locations - simply run "make install".  This will copy the
-files to $PREFIX and make them available system-wide to other developers or
-applications.
+The CMake build can install the header and libraries with:
 
-4. CONTROLLING BUILD PARAMETERS
-Altering build parameters is done by different flags to "configure".  The
-default is to build both a static AND shared library, as well as the two demo
-programs.  Also by default, CFLAGS is set to "-O2 -g".  To change this, for
-example making a debug build, use something like:
+	cmake --install build --prefix /usr/local
 
-	./configure CFLAGS="-O0"
+This copies smacker.h and the built libraries to the chosen prefix.  The
+"driver" and "smk2avi" example programs are not installed.
 
-or an optimized release build:
+The "libsmacker.a" static library can be compiled directly into an existing
+codebase:
 
-	./configure CFLAGS="-march=i686 -O2 -DNDEBUG"
+	cc main.c extra.c libsmacker.a
 
-Once reconfigured, running "make" will apply CFLAGS to calls to the C compiler,
-passing your options on to the underlying build system.
+or, after installation, linked as:
+
+	cc main.c -lsmacker
+
+The shared library needs to be distributed with your application, which can
+save space when several programs use libsmacker.
+
+"driver" and "smk2avi" are example programs that show how to use libsmacker.
+They can also test a successful build.
