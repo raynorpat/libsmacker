@@ -13,6 +13,11 @@ void test_bitwriter_grows(void);
 void test_huffman_absent(void);
 void test_huffman_single_symbol(void);
 void test_huffman_roundtrip(void);
+void test_tga_24_uncompressed_bottom_up(void);
+void test_tga_32_rle_top_down_alpha(void);
+void test_tga_8_colormapped(void);
+void test_tga_truncated(void);
+void test_image_unsupported_format(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -25,6 +30,11 @@ static const smk_test_case tests[] = {
     { "huffman_absent", test_huffman_absent },
     { "huffman_single_symbol", test_huffman_single_symbol },
     { "huffman_roundtrip", test_huffman_roundtrip },
+    { "tga_24_uncompressed_bottom_up", test_tga_24_uncompressed_bottom_up },
+    { "tga_32_rle_top_down_alpha", test_tga_32_rle_top_down_alpha },
+    { "tga_8_colormapped", test_tga_8_colormapped },
+    { "tga_truncated", test_tga_truncated },
+    { "image_unsupported_format", test_image_unsupported_format },
     { NULL, NULL }
 };
 
