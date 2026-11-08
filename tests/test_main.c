@@ -33,6 +33,12 @@ void test_wav_24bit_reduced(void);
 void test_wav_skips_unknown_chunks(void);
 void test_wav_rejects_compressed(void);
 void test_wav_truncated(void);
+void test_image_dir_natural_sort_and_filter(void);
+void test_image_dir_mixed_sizes(void);
+void test_image_dir_pads_and_replicates(void);
+void test_image_dir_strict_rejects_padding(void);
+void test_image_dir_empty(void);
+void test_image_dir_audio_pads_silence(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -65,6 +71,14 @@ static const smk_test_case tests[] = {
     { "wav_skips_unknown_chunks", test_wav_skips_unknown_chunks },
     { "wav_rejects_compressed", test_wav_rejects_compressed },
     { "wav_truncated", test_wav_truncated },
+    { "image_dir_natural_sort_and_filter",
+      test_image_dir_natural_sort_and_filter },
+    { "image_dir_mixed_sizes", test_image_dir_mixed_sizes },
+    { "image_dir_pads_and_replicates", test_image_dir_pads_and_replicates },
+    { "image_dir_strict_rejects_padding",
+      test_image_dir_strict_rejects_padding },
+    { "image_dir_empty", test_image_dir_empty },
+    { "image_dir_audio_pads_silence", test_image_dir_audio_pads_silence },
     { NULL, NULL }
 };
 

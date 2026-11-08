@@ -81,7 +81,8 @@ set(SMACKER_ENCODER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/huffman.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/image.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/wav.c)
-set(SMACKER_TOOL_INPUT_SOURCES)
+set(SMACKER_TOOL_INPUT_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/build_smk/image_dir.c)
 
 if(SMACKER_BUILD_TOOLS)
   add_executable(driver src/tools/driver.c)
