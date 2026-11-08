@@ -11,6 +11,8 @@ void test_cli_defaults(void)
     SMK_ASSERT_EQ_INT(options.palette, SMK_ENC_PALETTE_ADAPTIVE);
     SMK_ASSERT_EQ_INT(options.dither, SMK_ENC_DITHER_NONE);
     SMK_ASSERT_EQ_INT(options.colors, 256);
+    SMK_ASSERT(options.palette_threshold > 5.99 &&
+               options.palette_threshold < 6.01);
     SMK_ASSERT_EQ_INT(options.keyframe_interval, 150);
     SMK_ASSERT_EQ_INT(options.fps_num, 15);
     SMK_ASSERT_EQ_INT(options.fps_den, 1);

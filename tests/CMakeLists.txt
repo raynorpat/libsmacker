@@ -17,6 +17,7 @@ add_executable(smk_tests
   test_roundtrip_delta.c
   test_roundtrip_palette.c
   test_verify.c
+  test_roundtrip_avi.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 
@@ -32,3 +33,11 @@ add_test(NAME smk_tests COMMAND smk_tests)
 add_test(NAME build_smk_help COMMAND build_smk --help)
 add_test(NAME build_smk_usage COMMAND build_smk)
 set_tests_properties(build_smk_usage PROPERTIES WILL_FAIL TRUE)
+add_test(NAME build_smk_version COMMAND build_smk --version)
+set_tests_properties(build_smk_version PROPERTIES
+  PASS_REGULAR_EXPRESSION "build_smk 1\\.0\\.0")
+add_test(NAME build_smk_bad_option COMMAND build_smk --palette nope)
+set_tests_properties(build_smk_bad_option PROPERTIES WILL_FAIL TRUE)
+add_test(NAME build_smk_missing_input
+  COMMAND build_smk ${CMAKE_CURRENT_BINARY_DIR}/missing-input-directory)
+set_tests_properties(build_smk_missing_input PROPERTIES WILL_FAIL TRUE)

@@ -18,6 +18,10 @@ libsmacker implements the minimum feature set required from `smackw32.dll` to
 get an `.smk` file off a disk and the frames / audio into a buffer in the
 correct order.
 
+The source tree also includes `build_smk`, an encoder that writes SMK2 files
+from image directories, WAV audio, and smk2avi-style AVI files. See
+[docs/encoder.md](docs/encoder.md) for its CLI, C API, and format details.
+
 ## License
 
 libsmacker is released under the Lesser GNU Public License, v2.1. See the file
@@ -35,6 +39,8 @@ The source package additionally includes three example programs:
   24-bit color and a PCM audio stream.
 - `src/tools/smk_sdl_player.c` - plays a `.smk` file in a window with sound
   using SDL3 (or SDL2). Links against the static libsmacker library.
+- `src/tools/build_smk/` - encodes image directories or AVI files into SMK2,
+  with adaptive palettes, delta frames, PCM audio, and optional verification.
 
 Though the libraries are "bulletproofed" the sample apps are not: be cautious
 if you plan to implement in some critical environment.
@@ -47,6 +53,8 @@ if you plan to implement in some critical environment.
 - [docs/smacker.md](docs/smacker.md) - the Smacker container, palette, audio,
   Huffman tree, and 4x4 block video formats in detail, including differences
   between the MultimediaWiki description and the actual decoders.
+- [docs/encoder.md](docs/encoder.md) - the `build_smk` CLI and C API, supported
+  inputs and output modes, verification, and the encoder roadmap.
 
 ## Building
 
@@ -66,10 +74,18 @@ cmake -S . -B build -DSMACKER_BUILD_TOOLS=ON
 cmake --build build
 ```
 
-The `driver` and `smk2avi` programs are always built by that option. The SDL
-playback example is added when SDL3 or SDL2 is found and the static library is
-enabled. CMake prefers SDL3; pass `-DSMACKER_SDL_VERSION=2` or
-`-DSMACKER_SDL_VERSION=3` to force a version.
+The `driver`, `smk2avi`, and `build_smk` programs are always built by that
+option. The SDL playback example is added when SDL3 or SDL2 is found and the
+static library is enabled. CMake prefers SDL3; pass `-DSMACKER_SDL_VERSION=2`
+or `-DSMACKER_SDL_VERSION=3` to force a version.
+
+To build and run the encoder test suite as well:
+
+```sh
+cmake -S . -B build -DSMACKER_BUILD_TOOLS=ON -DSMACKER_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
 
 See [INSTALL.md](INSTALL.md) for the full list of build options and
 installation instructions.
@@ -82,6 +98,9 @@ installation instructions.
 - Install `smacker.h` and the libsmacker libraries with `cmake --install`.
 - Added optional `driver` and `smk2avi` build targets.
 - Added `smk_sdl_player`, an SDL2/SDL3 playback example.
+- Added `build_smk`, an SMK2 encoder for image directories, WAV audio, and
+  smk2avi-style AVI files, with adaptive palettes, delta frames, keyframes,
+  ring frames, PCM audio, and round-trip verification.
 - Converted the documentation to Markdown.
 
 ### 1.2.0

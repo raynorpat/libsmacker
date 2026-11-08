@@ -79,6 +79,9 @@ void test_verify_clean_file(void);
 void test_verify_corrupted_video(void);
 void test_verify_metadata_mismatch(void);
 void test_verify_every_audio_track(void);
+void test_roundtrip_avi_end_to_end(void);
+void test_roundtrip_avi_unsupported_codec(void);
+void test_avi_truncation_matrix(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -160,6 +163,9 @@ static const smk_test_case tests[] = {
     { "verify_corrupted_video", test_verify_corrupted_video },
     { "verify_metadata_mismatch", test_verify_metadata_mismatch },
     { "verify_every_audio_track", test_verify_every_audio_track },
+    { "roundtrip_avi_end_to_end", test_roundtrip_avi_end_to_end },
+    { "roundtrip_avi_unsupported_codec", test_roundtrip_avi_unsupported_codec },
+    { "avi_truncation_matrix", test_avi_truncation_matrix },
     { NULL, NULL }
 };
 

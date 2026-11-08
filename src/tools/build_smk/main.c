@@ -1,4 +1,7 @@
+#include "avi.h"
+#include "image_dir.h"
 #include "smk_encoder.h"
+#include "verify.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +29,7 @@ static void usage(FILE *out, const char *program)
         "      --strict            error on dimensions not divisible by 4\n"
         "      --verify            decode the result and compare it\n"
         "      --verbose           print progress\n"
+        "      --quiet             suppress progress messages\n"
         "  -h, --help              show this help\n"
         "      --version           show the version\n",
         program);
@@ -114,6 +118,16 @@ static void derive_output(const char *input, char *out, size_t outlen)
     memcpy(out + length, ".smk", 5);
 }
 
+static int is_avi_path(const char *path)
+{
+    size_t length = strlen(path);
+
+    return length >= 4 && path[length - 4] == '.' &&
+           (path[length - 3] == 'a' || path[length - 3] == 'A') &&
+           (path[length - 2] == 'v' || path[length - 2] == 'V') &&
+           (path[length - 1] == 'i' || path[length - 1] == 'I');
+}
+
 static int usage_error(const char *program, const char *message)
 {
     fprintf(stderr, "build_smk: %s\n", message);
@@ -124,10 +138,14 @@ static int usage_error(const char *program, const char *message)
 int main(int argc, char **argv)
 {
     smk_enc_options options;
+    smk_enc_source source;
+    smk_enc_status status;
     const char *input = NULL;
     const char *output = NULL;
     const char *audio = NULL;
     char output_buffer[4096];
+    char err[512] = { 0 };
+    int avi_input;
     int i;
 
     smk_enc_options_default(&options);
@@ -223,7 +241,6 @@ int main(int argc, char **argv)
         }
     }
 
-    (void)audio;
     if (input == NULL)
         return usage_error(argv[0], "missing input");
 
@@ -231,7 +248,50 @@ int main(int argc, char **argv)
         derive_output(input, output_buffer, sizeof(output_buffer));
         output = output_buffer;
     }
+    avi_input = is_avi_path(input);
+    if (audio != NULL && avi_input)
+        return usage_error(argv[0],
+                           "--audio only applies to image directories");
 
-    fprintf(stderr, "build_smk: input handling is not implemented yet\n");
-    return SMK_ENC_ERR_INPUT;
+    memset(&source, 0, sizeof(source));
+    if (avi_input) {
+        status = smk_avi_open(input, &options, &source, err, sizeof(err));
+    } else {
+        status = smk_image_dir_open(input, &options, &source, err, sizeof(err));
+        if (status == SMK_ENC_OK && audio != NULL)
+            status = smk_image_dir_attach_audio(&source, audio, err,
+                                                sizeof(err));
+    }
+    if (status != SMK_ENC_OK) {
+        if (err[0] != '\0')
+            fprintf(stderr, "build_smk: %s\n", err);
+        if (avi_input)
+            smk_avi_close(&source);
+        else
+            smk_image_dir_close(&source);
+        return status;
+    }
+
+    if (options.verbose)
+        fprintf(stderr, "build_smk: encoding %s\n", input);
+    status = smk_enc_encode(&source, &options, output, err, sizeof(err));
+    if (status == SMK_ENC_OK && options.verify) {
+        if (options.verbose)
+            fprintf(stderr, "build_smk: verifying %s\n", output);
+        status = smk_verify_file(output, &source, &options, err, sizeof(err));
+    }
+
+    if (avi_input)
+        smk_avi_close(&source);
+    else
+        smk_image_dir_close(&source);
+
+    if (status != SMK_ENC_OK) {
+        if (err[0] != '\0')
+            fprintf(stderr, "build_smk: %s\n", err);
+        return status;
+    }
+    if (options.verbose)
+        fprintf(stderr, "build_smk: wrote %s\n", output);
+    return SMK_ENC_OK;
 }
