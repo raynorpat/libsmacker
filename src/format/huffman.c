@@ -1,4 +1,20 @@
+/**
+	libsmacker - A C library for decoding .smk Smacker Video files
+	Copyright (C) 2012-2021 Greg Kennedy
+
+	See smacker.h for more information.
+
+	smacker.c
+		Main implementation file of libsmacker.
+		Open, close, query, render, advance and seek an smk
+*/
+
 #include "huffman.h"
+
+#include <assert.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include <stdlib.h>
 #include <string.h>
@@ -445,4 +461,390 @@ done:
     free(low_nodes);
     free(high_nodes);
     return result;
+}
+
+/* ************************************************************************* */
+/* HUFF8 Structure */
+/* ************************************************************************* */
+#define SMK_HUFF8_BRANCH 0x8000
+#define SMK_HUFF8_LEAF_MASK 0x7FFF
+
+/* ************************************************************************* */
+/* HUFF8 Functions */
+/* ************************************************************************* */
+/* Recursive sub-func for building a tree into an array. */
+static int _smk_huff8_build_rec(smk_huff8 * const t, smk_bitreader * const bs)
+{
+	int bit, value;
+	assert(t);
+	assert(bs);
+
+	/* Make sure we aren't running out of bounds */
+	if (t->size >= 511) {
+		fputs("libsmacker::_smk_huff8_build_rec() - ERROR: size exceeded\n", stderr);
+		return 0;
+	}
+
+	/* Read the next bit */
+	if ((bit = smk_bs_read_1(bs)) < 0) {
+		fputs("libsmacker::_smk_huff8_build_rec() - ERROR: get_bit returned -1\n", stderr);
+		return 0;
+	}
+
+	if (bit) {
+		/* Bit set: this forms a Branch node.
+			what we have to do is build the left-hand branch,
+			assign the "jump" address,
+			then build the right hand branch from there.
+		*/
+		/* track the current index */
+		value = t->size ++;
+
+		/* go build the left branch */
+		if (! _smk_huff8_build_rec(t, bs)) {
+			fputs("libsmacker::_smk_huff8_build_rec() - ERROR: failed to build left sub-tree\n", stderr);
+			return 0;
+		}
+
+		/* now go back to our current location, and
+			mark our location as a "jump" */
+		t->tree[value] = SMK_HUFF8_BRANCH | t->size;
+
+		/* continue building the right side */
+		if (! _smk_huff8_build_rec(t, bs)) {
+			fputs("libsmacker::_smk_huff8_build_rec() - ERROR: failed to build right sub-tree\n", stderr);
+			return 0;
+		}
+	} else {
+		/* Bit unset signifies a Leaf node. */
+		/* Attempt to read value */
+		if ((value = smk_bs_read_8(bs)) < 0) {
+			fputs("libsmacker::_smk_huff8_build_rec() - ERROR: get_byte returned -1\n", stderr);
+			return 0;
+		}
+
+		/* store to tree */
+		t->tree[t->size ++] = value;
+	}
+
+	return 1;
+}
+
+/**
+	Build an 8-bit Hufftree out of a Bitstream.
+*/
+int smk_huff8_build(smk_huff8 * const t, smk_bitreader * const bs)
+{
+	int bit;
+	/* null check */
+	assert(t);
+	assert(bs);
+
+	/* Smacker huff trees begin with a set-bit. */
+	if ((bit = smk_bs_read_1(bs)) < 0) {
+		fputs("libsmacker::smk_huff8_build() - ERROR: initial get_bit returned -1\n", stderr);
+		return 0;
+	}
+
+	/* OK to fill out the struct now */
+	t->size = 0;
+
+	/* First bit indicates whether a tree is present or not. */
+	/*  Very small or audio-only files may have no tree. */
+	if (bit) {
+		if (! _smk_huff8_build_rec(t, bs)) {
+			fputs("libsmacker::smk_huff8_build() - ERROR: tree build failed\n", stderr);
+			return 0;
+		}
+	} else
+		t->tree[0] = 0;
+
+	/* huff trees end with an unset-bit */
+	if ((bit = smk_bs_read_1(bs)) < 0) {
+		fputs("libsmacker::smk_huff8_build() - ERROR: final get_bit returned -1\n", stderr);
+		return 0;
+	}
+
+	/* a 0 is expected here, a 1 generally indicates a problem! */
+	if (bit) {
+		fputs("libsmacker::smk_huff8_build() - ERROR: final get_bit returned 1\n", stderr);
+		return 0;
+	}
+
+	return 1;
+}
+
+/* Look up an 8-bit value from a basic huff tree.
+	Return -1 on error. */
+int smk_huff8_lookup(const smk_huff8 * const t, smk_bitreader * const bs)
+{
+	int bit, index = 0;
+	/* null check */
+	assert(t);
+	assert(bs);
+
+	while (t->tree[index] & SMK_HUFF8_BRANCH) {
+		if ((bit = smk_bs_read_1(bs)) < 0) {
+			fputs("libsmacker::smk_huff8_lookup() - ERROR: get_bit returned -1\n", stderr);
+			return -1;
+		}
+
+		if (bit) {
+			/* take the right branch */
+			index = t->tree[index] & SMK_HUFF8_LEAF_MASK;
+		} else {
+			/* take the left branch */
+			index ++;
+		}
+	}
+
+	/* at leaf node.  return the value at this point. */
+	return t->tree[index];
+}
+
+/* ************************************************************************* */
+/* HUFF16 Structure */
+/* ************************************************************************* */
+#define SMK_HUFF16_BRANCH    0x80000000
+#define SMK_HUFF16_CACHE     0x40000000
+#define SMK_HUFF16_LEAF_MASK 0x3FFFFFFF
+
+/* ************************************************************************* */
+/* HUFF16 Functions */
+/* ************************************************************************* */
+/* Recursive sub-func for building a tree into an array. */
+static int _smk_huff16_build_rec(smk_huff16 * const t, smk_bitreader * const bs, const smk_huff8 * const low8, const smk_huff8 * const hi8, const size_t limit)
+{
+	int bit, value;
+	assert(t);
+	assert(bs);
+	assert(low8);
+	assert(hi8);
+
+	/* Make sure we aren't running out of bounds */
+	if (t->size >= limit) {
+		fputs("libsmacker::_smk_huff16_build_rec() - ERROR: size exceeded\n", stderr);
+		return 0;
+	}
+
+	/* Read the first bit */
+	if ((bit = smk_bs_read_1(bs)) < 0) {
+		fputs("libsmacker::_smk_huff16_build_rec() - ERROR: get_bit returned -1\n", stderr);
+		return 0;
+	}
+
+	if (bit) {
+		/* See tree-in-array explanation for HUFF8 above */
+		/* track the current index */
+		value = t->size ++;
+
+		/* go build the left branch */
+		if (! _smk_huff16_build_rec(t, bs, low8, hi8, limit)) {
+			fputs("libsmacker::_smk_huff16_build_rec() - ERROR: failed to build left sub-tree\n", stderr);
+			return 0;
+		}
+
+		/* now go back to our current location, and
+			mark our location as a "jump" */
+		t->tree[value] = SMK_HUFF16_BRANCH | t->size;
+
+		/* continue building the right side */
+		if (! _smk_huff16_build_rec(t, bs, low8, hi8, limit)) {
+			fputs("libsmacker::_smk_huff16_build_rec() - ERROR: failed to build right sub-tree\n", stderr);
+			return 0;
+		}
+	} else {
+		/* Bit unset signifies a Leaf node. */
+		/* Attempt to read LOW value */
+		if ((value = smk_huff8_lookup(low8, bs)) < 0) {
+			fputs("libsmacker::_smk_huff16_build_rec() - ERROR: get LOW value returned -1\n", stderr);
+			return 0;
+		}
+
+		t->tree[t->size] = value;
+
+		/* now read HIGH value */
+		if ((value = smk_huff8_lookup(hi8, bs)) < 0) {
+			fputs("libsmacker::_smk_huff16_build_rec() - ERROR: get HIGH value returned -1\n", stderr);
+			return 0;
+		}
+
+		/* Looks OK: we got low and hi values. Return a new LEAF */
+		t->tree[t->size] |= (value << 8);
+
+		/* Last: when building the tree, some Values may correspond to cache positions.
+			Identify these values and set the Escape code byte accordingly. */
+		if (t->tree[t->size] == t->cache[0])
+			t->tree[t->size] = SMK_HUFF16_CACHE;
+		else if (t->tree[t->size] == t->cache[1])
+			t->tree[t->size] = SMK_HUFF16_CACHE | 1;
+		else if (t->tree[t->size] == t->cache[2])
+			t->tree[t->size] = SMK_HUFF16_CACHE | 2;
+
+		t->size ++;
+	}
+
+	return 1;
+}
+
+/* Entry point for building a big 16-bit tree. */
+int smk_huff16_build(smk_huff16 * const t, smk_bitreader * const bs, uint32_t alloc_size)
+{
+	smk_huff8 low8, hi8;
+	size_t limit;
+	int value, i, bit;
+	/* null check */
+	assert(t);
+	assert(bs);
+
+	/* Smacker huff trees begin with a set-bit. */
+	if ((bit = smk_bs_read_1(bs)) < 0) {
+		fputs("libsmacker::smk_huff16_build() - ERROR: initial get_bit returned -1\n", stderr);
+		return 0;
+	}
+
+	t->size = 0;
+
+	/* First bit indicates whether a tree is present or not. */
+	/*  Very small or audio-only files may have no tree. */
+	if (bit) {
+		/* build low-8-bits tree */
+		if (! smk_huff8_build(&low8, bs)) {
+			fputs("libsmacker::smk_huff16_build() - ERROR: failed to build LOW tree\n", stderr);
+			return 0;
+		}
+
+		/* build hi-8-bits tree */
+		if (! smk_huff8_build(&hi8, bs)) {
+			fputs("libsmacker::smk_huff16_build() - ERROR: failed to build HIGH tree\n", stderr);
+			return 0;
+		}
+
+		/* Init the escape code cache. */
+		for (i = 0; i < 3; i ++) {
+			if ((value = smk_bs_read_8(bs)) < 0) {
+				fprintf(stderr, "libsmacker::smk_huff16_build() - ERROR: get LOW value for cache %d returned -1\n", i);
+				return 0;
+			}
+
+			t->cache[i] = value;
+
+			/* now read HIGH value */
+			if ((value = smk_bs_read_8(bs)) < 0) {
+				fprintf(stderr, "libsmacker::smk_huff16_build() - ERROR: get HIGH value for cache %d returned -1\n", i);
+				return 0;
+			}
+
+			t->cache[i] |= (value << 8);
+		}
+
+		/* Everything looks OK so far. Time to malloc structure. */
+		if (alloc_size < 12 || alloc_size % 4) {
+			fprintf(stderr, "libsmacker::smk_huff16_build() - ERROR: illegal value %u for alloc_size\n", alloc_size);
+			return 0;
+		}
+
+		limit = (alloc_size - 12) / 4;
+
+		if ((t->tree = malloc(limit * sizeof(uint32_t))) == NULL) {
+			perror("libsmacker::smk_huff16_build() - ERROR: failed to malloc() huff16 tree");
+			return 0;
+		}
+
+		/* Finally, call recursive function to retrieve the Bigtree. */
+		if (! _smk_huff16_build_rec(t, bs, &low8, &hi8, limit)) {
+			fputs("libsmacker::smk_huff16_build() - ERROR: failed to build huff16 tree\n", stderr);
+			free(t->tree);
+			t->tree = NULL;
+			return 0;
+		}
+
+		/* check that we completely filled the tree */
+		if (limit != t->size) {
+			fputs("libsmacker::smk_huff16_build() - ERROR: failed to completely decode huff16 tree\n", stderr);
+			free(t->tree);
+			t->tree = NULL;
+			return 0;
+		}
+	} else {
+		if ((t->tree = malloc(sizeof(uint32_t))) == NULL) {
+			perror("libsmacker::smk_huff16_build() - ERROR: failed to malloc() huff16 tree");
+			return 0;
+		}
+
+		t->tree[0] = 0;
+		//t->cache[0] = t->cache[1] = t->cache[2] = 0;
+	}
+
+	/* Check final end tag. */
+	if ((bit = smk_bs_read_1(bs)) < 0) {
+		fputs("libsmacker::smk_huff16_build() - ERROR: final get_bit returned -1\n", stderr);
+		free(t->tree);
+		t->tree = NULL;
+		return 0;
+	}
+
+	/* a 0 is expected here, a 1 generally indicates a problem! */
+	if (bit) {
+		fputs("libsmacker::smk_huff16_build() - ERROR: final get_bit returned 1\n", stderr);
+		free(t->tree);
+		t->tree = NULL;
+		return 0;
+	}
+
+	return 1;
+}
+
+/* Look up a 16-bit value from a large huff tree.
+	Return -1 on error.
+	Note that this also updates the recently-used-values cache. */
+int smk_huff16_lookup(smk_huff16 * const t, smk_bitreader * const bs)
+{
+	int bit, value, index = 0;
+	/* null check */
+	assert(t);
+	assert(bs);
+
+	while (t->tree[index] & SMK_HUFF16_BRANCH) {
+		if ((bit = smk_bs_read_1(bs)) < 0) {
+			fputs("libsmacker::smk_huff16_lookup() - ERROR: get_bit returned -1\n", stderr);
+			return -1;
+		}
+
+		if (bit) {
+			/* take the right branch */
+			index = t->tree[index] & SMK_HUFF16_LEAF_MASK;
+		} else {
+			/* take the left branch */
+			index ++;
+		}
+	}
+
+	/* Get the value at this point */
+	value = t->tree[index];
+
+	if (value & SMK_HUFF16_CACHE) {
+		/* uses cached value instead of actual value */
+		value = t->cache[value & SMK_HUFF16_LEAF_MASK];
+	}
+
+	if (t->cache[0] != value) {
+		/* Update the cache, by moving val to the front of the queue,
+			if it isn't already there. */
+		t->cache[2] = t->cache[1];
+		t->cache[1] = t->cache[0];
+		t->cache[0] = value;
+	}
+
+	return value;
+}
+
+
+void smk_huff16_free(smk_huff16 *t)
+{
+    if (t == NULL)
+        return;
+    free(t->tree);
+    t->tree = NULL;
+    t->size = 0;
 }

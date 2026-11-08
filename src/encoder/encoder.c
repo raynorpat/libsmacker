@@ -2,7 +2,7 @@
 
 #include "container.h"
 #include "encoder_internal.h"
-#include "huffman.h"
+#include "format/huffman.h"
 #include "quantize.h"
 #include "video.h"
 

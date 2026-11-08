@@ -46,13 +46,13 @@ function(smacker_set_library_settings target)
 endfunction()
 
 if(SMACKER_BUILD_STATIC)
-  add_library(smacker_static STATIC src/smacker.c src/format/bitio.c)
+  add_library(smacker_static STATIC src/smacker.c src/format/bitio.c src/format/huffman.c)
   smacker_set_library_settings(smacker_static)
   set_target_properties(smacker_static PROPERTIES OUTPUT_NAME smacker)
 endif()
 
 if(SMACKER_BUILD_SHARED)
-  add_library(smacker_shared SHARED src/smacker.c src/format/bitio.c)
+  add_library(smacker_shared SHARED src/smacker.c src/format/bitio.c src/format/huffman.c)
   smacker_set_library_settings(smacker_shared)
   set_target_properties(smacker_shared PROPERTIES
     OUTPUT_NAME smacker
@@ -77,7 +77,6 @@ add_library(Smacker::smacker ALIAS ${SMACKER_LINK_TARGET})
 # Reusable encoder sources, compiled directly into smk_build and the tests.
 set(SMACKER_ENCODER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/encoder.c
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/huffman.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/image.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/wav.c
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/avi.c

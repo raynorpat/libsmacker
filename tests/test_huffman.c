@@ -1,150 +1,26 @@
 #include "test.h"
 #include "format/bitio.h"
-#include "huffman.h"
+#include "format/huffman.h"
 
-#include <stdlib.h>
+#include <string.h>
 
-typedef struct {
-    const uint8_t *data;
-    size_t bits;
-    size_t pos;
-} tbits;
-
-static unsigned tbit(tbits *b)
+static void init_reader(smk_bitreader *bs, const smk_bitwriter *bw)
 {
-    if (b->pos >= b->bits)
-        return 0;
-    return (b->data[b->pos >> 3] >> (b->pos++ & 7)) & 1u;
-}
+    static const uint8_t empty = 0;
+    const uint8_t *data = smk_bw_data(bw);
 
-static uint32_t tbits_n(tbits *b, unsigned n)
-{
-    uint32_t value = 0;
-    unsigned i;
-
-    for (i = 0; i < n; i++)
-        value |= (uint32_t)tbit(b) << i;
-    return value;
-}
-
-typedef struct {
-    int left;
-    int right;
-    uint16_t value;
-} tnode;
-
-static int parse8_rec(tbits *b, tnode *nodes, int *count)
-{
-    unsigned branch = tbit(b);
-    int index = (*count)++;
-
-    if (branch) {
-        nodes[index].left = parse8_rec(b, nodes, count);
-        nodes[index].right = parse8_rec(b, nodes, count);
-    } else {
-        nodes[index].left = -1;
-        nodes[index].right = -1;
-        nodes[index].value = (uint16_t)tbits_n(b, 8);
-    }
-    return index;
-}
-
-static int parse8(tbits *b, tnode *nodes, int *count, int *present)
-{
-    int root;
-
-    *present = (int)tbit(b);
-    if (!*present) {
-        (void)tbit(b);
-        return -1;
-    }
-    root = parse8_rec(b, nodes, count);
-    (void)tbit(b);
-    return root;
-}
-
-static uint16_t decode8(tbits *b, const tnode *nodes, int root, int present)
-{
-    int index;
-
-    if (!present)
-        return 0;
-    index = root;
-    while (nodes[index].left >= 0)
-        index = tbit(b) ? nodes[index].right : nodes[index].left;
-    return nodes[index].value;
-}
-
-static int parse16_rec(tbits *b, tnode *nodes, int *count,
-                       const tnode *low, int low_root, int low_present,
-                       const tnode *high, int high_root, int high_present)
-{
-    unsigned branch = tbit(b);
-    int index = (*count)++;
-
-    if (branch) {
-        nodes[index].left = parse16_rec(b, nodes, count, low, low_root,
-                                        low_present, high, high_root,
-                                        high_present);
-        nodes[index].right = parse16_rec(b, nodes, count, low, low_root,
-                                         low_present, high, high_root,
-                                         high_present);
-    } else {
-        uint16_t lo = decode8(b, low, low_root, low_present);
-        uint16_t hi = decode8(b, high, high_root, high_present);
-
-        nodes[index].left = -1;
-        nodes[index].right = -1;
-        nodes[index].value = (uint16_t)(lo | (hi << 8));
-    }
-    return index;
-}
-
-static int parse16(tbits *b, tnode *nodes, int *count, uint16_t escapes[3],
-                   int *present)
-{
-    tnode low[511];
-    tnode high[511];
-    int low_count = 0;
-    int high_count = 0;
-    int low_root;
-    int high_root;
-    int low_present;
-    int high_present;
-    int root;
-    int i;
-
-    *present = (int)tbit(b);
-    if (!*present) {
-        (void)tbit(b);
-        return -1;
-    }
-    low_root = parse8(b, low, &low_count, &low_present);
-    high_root = parse8(b, high, &high_count, &high_present);
-    for (i = 0; i < 3; i++) {
-        uint16_t lo = (uint16_t)tbits_n(b, 8);
-        uint16_t hi = (uint16_t)tbits_n(b, 8);
-        escapes[i] = (uint16_t)(lo | (hi << 8));
-    }
-    root = parse16_rec(b, nodes, count, low, low_root, low_present, high,
-                       high_root, high_present);
-    (void)tbit(b);
-    return root;
-}
-
-static uint16_t decode16(tbits *b, const tnode *nodes, int root)
-{
-    int index = root;
-
-    while (nodes[index].left >= 0)
-        index = tbit(b) ? nodes[index].right : nodes[index].left;
-    return nodes[index].value;
+    if (data == NULL)
+        smk_bs_init(bs, &empty, 0);
+    else
+        smk_bs_init(bs, data, smk_bw_byte_count(bw));
 }
 
 void test_huffman_absent(void)
 {
     smk_huff h;
     smk_bitwriter bw;
+    smk_bitreader bs;
+    smk_huff16 walker;
     static const uint8_t expected[1] = { 0 };
 
     smk_huff_init(&h);
@@ -154,6 +30,13 @@ void test_huffman_absent(void)
     SMK_ASSERT_EQ_INT(smk_huff_serialize(&h, &bw), 0);
     SMK_ASSERT_EQ_INT(smk_bw_byte_count(&bw), 1);
     SMK_ASSERT_MEM_EQ(smk_bw_data(&bw), expected, 1);
+
+    memset(&walker, 0, sizeof(walker));
+    init_reader(&bs, &bw);
+    SMK_ASSERT_EQ_INT(smk_huff16_build(&walker, &bs, 0), 1);
+    SMK_ASSERT_EQ_INT(smk_huff16_lookup(&walker, &bs), 0);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)bw.bit_count);
+    smk_huff16_free(&walker);
     smk_bw_free(&bw);
     smk_huff_free(&h);
 }
@@ -163,13 +46,9 @@ void test_huffman_single_symbol(void)
     smk_huff h;
     smk_bitwriter tree;
     smk_bitwriter data;
-    tnode nodes[8];
-    uint16_t escapes[3];
-    int present = 0;
-    int count = 0;
-    int root;
-    tbits tb;
-    tbits db;
+    smk_bitreader bs;
+    smk_huff16 walker;
+    int i;
 
     smk_huff_init(&h);
     smk_huff_count(&h, 0x1234);
@@ -178,23 +57,22 @@ void test_huffman_single_symbol(void)
     smk_bw_init(&tree);
     SMK_ASSERT_EQ_INT(smk_huff_serialize(&h, &tree), 0);
 
-    memset(&tb, 0, sizeof(tb));
-    tb.data = smk_bw_data(&tree);
-    tb.bits = tree.bit_count;
-    root = parse16(&tb, nodes, &count, escapes, &present);
-    SMK_ASSERT_EQ_INT(present, 1);
-    SMK_ASSERT_EQ_INT(count, 1);
-    SMK_ASSERT_EQ_INT(nodes[root].value, 0x1234);
-    SMK_ASSERT_EQ_INT(tb.pos, tb.bits);
+    memset(&walker, 0, sizeof(walker));
+    init_reader(&bs, &tree);
+    SMK_ASSERT_EQ_INT(smk_huff16_build(&walker, &bs,
+                                       12u + 4u * smk_huff_packed_nodes(&h)),
+                      1);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)tree.bit_count);
+    for (i = 0; i < 3; i++)
+        SMK_ASSERT(walker.cache[i] != 0x1234);
 
     smk_bw_init(&data);
     SMK_ASSERT_EQ_INT(smk_huff_encode(&h, 0x1234, &data), 0);
     SMK_ASSERT_EQ_INT(data.bit_count, 0);
-    memset(&db, 0, sizeof(db));
-    db.data = smk_bw_data(&data);
-    db.bits = data.bit_count;
-    SMK_ASSERT_EQ_INT(decode16(&db, nodes, root), 0x1234);
+    init_reader(&bs, &data);
+    SMK_ASSERT_EQ_INT(smk_huff16_lookup(&walker, &bs), 0x1234);
 
+    smk_huff16_free(&walker);
     smk_bw_free(&data);
     smk_bw_free(&tree);
     smk_huff_free(&h);
@@ -210,15 +88,10 @@ void test_huffman_roundtrip(void)
     smk_huff h;
     smk_bitwriter tree;
     smk_bitwriter data;
-    tnode nodes[2047];
-    uint16_t escapes[3];
-    int present = 0;
-    int count = 0;
-    int root;
+    smk_bitreader bs;
+    smk_huff16 walker;
     unsigned i;
     unsigned j;
-    tbits tb;
-    tbits db;
 
     smk_huff_init(&h);
     for (i = 0; i < symbol_count; i++) {
@@ -230,29 +103,64 @@ void test_huffman_roundtrip(void)
 
     smk_bw_init(&tree);
     SMK_ASSERT_EQ_INT(smk_huff_serialize(&h, &tree), 0);
-    memset(&tb, 0, sizeof(tb));
-    tb.data = smk_bw_data(&tree);
-    tb.bits = tree.bit_count;
-    root = parse16(&tb, nodes, &count, escapes, &present);
-    SMK_ASSERT_EQ_INT(present, 1);
-    SMK_ASSERT_EQ_INT(count, (int)(symbol_count * 2 - 1));
-    SMK_ASSERT_EQ_INT(tb.pos, tb.bits);
+    memset(&walker, 0, sizeof(walker));
+    init_reader(&bs, &tree);
+    SMK_ASSERT_EQ_INT(smk_huff16_build(&walker, &bs,
+                                       12u + 4u * smk_huff_packed_nodes(&h)),
+                      1);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)tree.bit_count);
 
     for (i = 0; i < 3; i++) {
         for (j = 0; j < symbol_count; j++)
-            SMK_ASSERT(escapes[i] != symbols[j]);
+            SMK_ASSERT(walker.cache[i] != symbols[j]);
     }
 
     smk_bw_init(&data);
     for (i = 0; i < symbol_count; i++)
         SMK_ASSERT_EQ_INT(smk_huff_encode(&h, symbols[i], &data), 0);
-    memset(&db, 0, sizeof(db));
-    db.data = smk_bw_data(&data);
-    db.bits = data.bit_count;
+    init_reader(&bs, &data);
     for (i = 0; i < symbol_count; i++)
-        SMK_ASSERT_EQ_INT(decode16(&db, nodes, root), symbols[i]);
-    SMK_ASSERT_EQ_INT(db.pos, db.bits);
+        SMK_ASSERT_EQ_INT(smk_huff16_lookup(&walker, &bs), symbols[i]);
+    SMK_ASSERT_EQ_INT(smk_bs_tell(&bs), (long long)data.bit_count);
 
+    smk_huff16_free(&walker);
+    smk_bw_free(&data);
+    smk_bw_free(&tree);
+    smk_huff_free(&h);
+}
+
+void test_huffman_cache_lookup(void)
+{
+    static const uint16_t sequence[] = { 1, 2, 1 };
+    smk_huff h;
+    smk_bitwriter tree;
+    smk_bitwriter data;
+    smk_bitreader bs;
+    smk_huff16 walker;
+    unsigned i;
+
+    smk_huff_init(&h);
+    smk_huff_count(&h, 1);
+    smk_huff_count(&h, 2);
+    smk_huff_count(&h, 3);
+    SMK_ASSERT_EQ_INT(smk_huff_build(&h), 0);
+
+    smk_bw_init(&tree);
+    SMK_ASSERT_EQ_INT(smk_huff_serialize(&h, &tree), 0);
+    memset(&walker, 0, sizeof(walker));
+    init_reader(&bs, &tree);
+    SMK_ASSERT_EQ_INT(smk_huff16_build(&walker, &bs,
+                                       12u + 4u * smk_huff_packed_nodes(&h)),
+                      1);
+
+    smk_bw_init(&data);
+    for (i = 0; i < 3; i++)
+        SMK_ASSERT_EQ_INT(smk_huff_encode(&h, sequence[i], &data), 0);
+    init_reader(&bs, &data);
+    for (i = 0; i < 3; i++)
+        SMK_ASSERT_EQ_INT(smk_huff16_lookup(&walker, &bs), sequence[i]);
+
+    smk_huff16_free(&walker);
     smk_bw_free(&data);
     smk_bw_free(&tree);
     smk_huff_free(&h);
