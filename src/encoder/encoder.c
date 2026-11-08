@@ -1,6 +1,7 @@
 #include "smk_encoder.h"
 
 #include "container.h"
+#include "encoder_internal.h"
 #include "huffman.h"
 #include "quantize.h"
 #include "video.h"
@@ -66,7 +67,7 @@ static size_t build_palette_chunk(const smk_palette *palette, uint8_t *out)
     return pos;
 }
 
-static unsigned clamp_colors(unsigned colors)
+unsigned smk_enc_clamp_colors(unsigned colors)
 {
     if (colors < 2)
         return 2;
@@ -75,7 +76,7 @@ static unsigned clamp_colors(unsigned colors)
     return colors;
 }
 
-static size_t audio_align(const smk_enc_audio_info *info)
+size_t smk_enc_audio_align(const smk_enc_audio_info *info)
 {
     return (size_t)info->channels * (size_t)(info->bits / 8);
 }
@@ -102,18 +103,14 @@ static int audio_descriptor(const smk_enc_audio_info *info, uint32_t *out)
  * rate * fps_den / fps_num. Keep the remainder so samples split exactly and
  * never drift, regardless of whether the ratio is integral.
  */
-typedef struct {
-    uint64_t rem;
-} audio_split;
-
-static int audio_frame_bytes(audio_split *split,
+int smk_enc_audio_frame_bytes(smk_enc_audio_split *split,
                              const smk_enc_audio_info *info,
                              unsigned fps_num, unsigned fps_den,
                              size_t *samples_out, size_t *bytes_out)
 {
     uint64_t step;
     uint64_t samples;
-    size_t align = audio_align(info);
+    size_t align = smk_enc_audio_align(info);
 
     if (fps_num == 0 || fps_den == 0 || align == 0)
         return -1;
@@ -142,11 +139,6 @@ static void put_u32le(uint8_t *out, uint32_t value)
     out[3] = (uint8_t)((value >> 24) & 0xffu);
 }
 
-typedef struct {
-    const smk_palette *palette;
-    int frame_palette;
-} palette_choice;
-
 static int build_frame_palette(smk_histogram *hist, const uint8_t *rgb,
                                size_t pixels, unsigned colors,
                                smk_palette *out)
@@ -164,12 +156,12 @@ static int build_frame_palette(smk_histogram *hist, const uint8_t *rgb,
  * Adaptive mode keeps the shared palette unless the per-frame error exceeds
  * the threshold. The same decision is made in the count and write passes.
  */
-static int choose_palette(const smk_enc_options *options,
+int smk_enc_choose_palette(const smk_enc_options *options,
                           const smk_palette *global, smk_histogram *hist,
                           const uint8_t *rgb, unsigned width, unsigned height,
                           unsigned colors, smk_quant_lut *lut,
                           uint8_t *indices, smk_palette *scratch,
-                          palette_choice *choice)
+                          smk_enc_palette_choice *choice)
 {
     size_t pixels = (size_t)width * height;
 
@@ -208,7 +200,7 @@ static int choose_palette(const smk_enc_options *options,
  * adaptive mode writes one whenever a frame palette starts or ends, because
  * the previous palette must be restored and a palette change needs a keyframe.
  */
-static int palette_is_emitted(smk_enc_palette_mode mode, unsigned index,
+int smk_enc_palette_is_emitted(smk_enc_palette_mode mode, unsigned index,
                               int frame_palette, int previous_frame_palette)
 {
     if (mode == SMK_ENC_PALETTE_FRAME)
@@ -249,7 +241,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     smk_histogram *hist = NULL;
     smk_palette palette;
     smk_palette frame_palette;
-    palette_choice choice;
+    smk_enc_palette_choice choice;
     smk_quant_lut *lut = NULL;
     smk_huff trees[SMK_VIDEO_TREE_COUNT];
     smk_video video;
@@ -258,7 +250,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     smk_container container;
     smk_container_info info;
     uint8_t palette_chunk[SMK_PALETTE_CHUNK_MAX];
-    audio_split splits[SMK_ENC_MAX_AUDIO_TRACKS];
+    smk_enc_audio_split splits[SMK_ENC_MAX_AUDIO_TRACKS];
     size_t audio_pos[SMK_ENC_MAX_AUDIO_TRACKS];
     size_t frame_samples[SMK_ENC_MAX_AUDIO_TRACKS];
     size_t frame_audio_bytes[SMK_ENC_MAX_AUDIO_TRACKS];
@@ -296,7 +288,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
                     "audio tracks have no reader");
 
     pixels = (size_t)source->width * source->height;
-    colors = clamp_colors(options->colors);
+    colors = smk_enc_clamp_colors(options->colors);
     fps_num = source->fps_num != 0 ? source->fps_num : options->fps_num;
     fps_den = source->fps_den != 0 ? source->fps_den : options->fps_den;
     if (fps_num == 0)
@@ -321,7 +313,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
      */
     tracks = source->audio_track_count;
     for (track = 0; track < tracks; track++) {
-        audio_split split;
+        smk_enc_audio_split split;
         uint64_t max_bytes = 0;
 
         if (audio_descriptor(&source->audio[track],
@@ -335,7 +327,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
             size_t samples;
             size_t bytes;
 
-            if (audio_frame_bytes(&split, &source->audio[track], fps_num,
+            if (smk_enc_audio_frame_bytes(&split, &source->audio[track], fps_num,
                                   fps_den, &samples, &bytes) != 0) {
                 status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
                               "audio frame size overflow");
@@ -402,14 +394,14 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
             status = SMK_ENC_ERR_INPUT;
             goto cleanup;
         }
-        if (choose_palette(options, &palette, hist, rgb, source->width,
+        if (smk_enc_choose_palette(options, &palette, hist, rgb, source->width,
                            source->height, colors, lut, indices,
                            &frame_palette, &choice) != 0) {
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
                           "could not build a palette");
             goto cleanup;
         }
-        emit_palette = palette_is_emitted(options->palette, i,
+        emit_palette = smk_enc_palette_is_emitted(options->palette, i,
                                           choice.frame_palette,
                                           prev_frame_palette);
         prev_frame_palette = choice.frame_palette;
@@ -500,14 +492,14 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
             status = SMK_ENC_ERR_INPUT;
             goto cleanup;
         }
-        if (choose_palette(options, &palette, hist, rgb, source->width,
+        if (smk_enc_choose_palette(options, &palette, hist, rgb, source->width,
                            source->height, colors, lut, indices,
                            &frame_palette, &choice) != 0) {
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,
                           "could not build a palette");
             goto cleanup;
         }
-        emit_palette = palette_is_emitted(options->palette, i,
+        emit_palette = smk_enc_palette_is_emitted(options->palette, i,
                                           choice.frame_palette,
                                           prev_frame_palette);
         prev_frame_palette = choice.frame_palette;
@@ -528,7 +520,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         video_size = smk_bw_byte_count(&frame_bits);
         payload_size = palette_size + video_size;
         for (track = 0; track < tracks; track++) {
-            if (audio_frame_bytes(&splits[track], &source->audio[track],
+            if (smk_enc_audio_frame_bytes(&splits[track], &source->audio[track],
                                   fps_num, fps_den, &frame_samples[track],
                                   &frame_audio_bytes[track]) != 0) {
                 smk_bw_free(&frame_bits);
@@ -604,7 +596,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
                           "cannot read frame 0 for ring");
             goto cleanup;
         }
-        if (choose_palette(options, &palette, hist, rgb, source->width,
+        if (smk_enc_choose_palette(options, &palette, hist, rgb, source->width,
                            source->height, colors, lut, indices,
                            &frame_palette, &choice) != 0) {
             status = fail(err, errlen, SMK_ENC_ERR_ENCODE,

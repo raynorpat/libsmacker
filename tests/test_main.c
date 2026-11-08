@@ -75,6 +75,10 @@ void test_palette_global_one_chunk(void);
 void test_palette_frame_each_frame(void);
 void test_palette_adaptive_threshold(void);
 void test_palette_dither_modes(void);
+void test_verify_clean_file(void);
+void test_verify_corrupted_video(void);
+void test_verify_metadata_mismatch(void);
+void test_verify_every_audio_track(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -152,6 +156,10 @@ static const smk_test_case tests[] = {
     { "palette_frame_each_frame", test_palette_frame_each_frame },
     { "palette_adaptive_threshold", test_palette_adaptive_threshold },
     { "palette_dither_modes", test_palette_dither_modes },
+    { "verify_clean_file", test_verify_clean_file },
+    { "verify_corrupted_video", test_verify_corrupted_video },
+    { "verify_metadata_mismatch", test_verify_metadata_mismatch },
+    { "verify_every_audio_track", test_verify_every_audio_track },
     { NULL, NULL }
 };
 

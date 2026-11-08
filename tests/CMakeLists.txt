@@ -16,6 +16,7 @@ add_executable(smk_tests
   test_roundtrip_audio.c
   test_roundtrip_delta.c
   test_roundtrip_palette.c
+  test_verify.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES})
 
