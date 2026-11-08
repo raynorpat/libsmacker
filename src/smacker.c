@@ -15,6 +15,7 @@
 #include "format/huffman.h"
 #include "format/palette.h"
 #include "format/video.h"
+#include "format/header.h"
 #include "smk_malloc.h"
 
 #include <assert.h>
@@ -185,16 +186,6 @@ static char smk_read_memory(void * buf, const unsigned long size, unsigned char 
 	} \
 }
 
-/* Calls smk_read, but returns a ul */
-#define smk_read_ul(p) \
-{ \
-	smk_read(buf,4); \
-	p = ((unsigned long) buf[3] << 24) | \
-		((unsigned long) buf[2] << 16) | \
-		((unsigned long) buf[1] << 8) | \
-		((unsigned long) buf[0]); \
-}
-
 /* PUBLIC FUNCTIONS */
 /* open an smk (from a generic Source) */
 static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned long size, const unsigned char process_mode)
@@ -207,6 +198,12 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 	/* r is used by macros above for return code */
 	char r;
 	unsigned char buf[4] = {'\0'};
+	unsigned char header_bytes[SMK_HEADER_SIZE];
+	smk_file_header file_header;
+	smk_audio_rate_info audio_rate;
+	uint32_t frame_word;
+	uint32_t frame_size;
+	int frame_key;
 	/* video hufftrees are stored as a large chunk (bitstream)
 		these vars are used to load, then decode them */
 	unsigned char * hufftree_chunk = NULL;
@@ -222,7 +219,16 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 	}
 
 	/* Check for a valid signature */
-	smk_read(buf, 3);
+	smk_read(header_bytes, SMK_HEADER_SIZE);
+	if (smk_header_unpack(header_bytes, &file_header) != 0) {
+		fputs("libsmacker::smk_open_generic - ERROR: failed to unpack header\n", stderr);
+		goto error;
+	}
+
+	buf[0] = (unsigned char)file_header.signature[0];
+	buf[1] = (unsigned char)file_header.signature[1];
+	buf[2] = (unsigned char)file_header.signature[2];
+	buf[3] = '\0';
 
 	if (buf[0] != 'S' || buf[1] != 'M' || buf[2] != 'K') {
 		fprintf(stderr, "libsmacker::smk_open_generic - ERROR: invalid SMKn signature (got: %s)\n", buf);
@@ -230,7 +236,7 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 	}
 
 	/* Read .smk file version */
-	smk_read(&s->video.v, 1);
+	s->video.v = (unsigned char)file_header.signature[3];
 
 	if (s->video.v != '2' && s->video.v != '4') {
 		fprintf(stderr, "libsmacker::smk_open_generic - Warning: invalid SMK version %c (expected: 2 or 4)\n", s->video.v);
@@ -245,12 +251,11 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 	}
 
 	/* width, height, total num frames */
-	smk_read_ul(s->video.w);
-	smk_read_ul(s->video.h);
-	smk_read_ul(s->f);
+	s->video.w = file_header.width;
+	s->video.h = file_header.height;
+	s->f = file_header.frames;
 	/* frames per second calculation */
-	smk_read_ul(temp_u);
-	temp_l = (int)temp_u;
+	temp_l = file_header.frame_rate;
 
 	if (temp_l > 0) {
 		/* millisec per frame */
@@ -267,15 +272,13 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 		Ring frame is important to libsmacker.
 		Y scale / Y interlace go in the Video flags.
 		The user should scale appropriately. */
-	smk_read_ul(temp_u);
-
-	if (temp_u & 0x01)
+	if (file_header.flags & SMK_HEADER_FLAG_RING)
 		s->ring_frame = 1;
 
-	if (temp_u & 0x02)
+	if (file_header.flags & SMK_HEADER_FLAG_Y_DOUBLE)
 		s->video.y_scale_mode = SMK_FLAG_Y_DOUBLE;
 
-	if (temp_u & 0x04) {
+	if (file_header.flags & SMK_HEADER_FLAG_Y_INTERLACE) {
 		if (s->video.y_scale_mode == SMK_FLAG_Y_DOUBLE)
 			fputs("libsmacker::smk_open_generic - Warning: SMK file specifies both Y-Double AND Y-Interlace.\n", stderr);
 
@@ -284,56 +287,54 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 
 	/* Max buffer size for each audio track - used to pre-allocate buffers */
 	for (temp_l = 0; temp_l < 7; temp_l ++)
-		smk_read_ul(s->audio[temp_l].max_buffer);
+		s->audio[temp_l].max_buffer = file_header.audio_size[temp_l];
 
 	/* Read size of "hufftree chunk" - save for later. */
-	smk_read_ul(tree_size);
+	tree_size = file_header.trees_size;
 
 	/* "unpacked" sizes of each huff tree */
 	for (temp_l = 0; temp_l < 4; temp_l ++)
-		smk_read_ul(s->video.tree_size[temp_l]);
+		s->video.tree_size[temp_l] = file_header.tree_size[temp_l];
 
 	/* read audio rate data */
 	for (temp_l = 0; temp_l < 7; temp_l ++) {
-		smk_read_ul(temp_u);
+		smk_header_unpack_audio_rate(file_header.audio_rate[temp_l], &audio_rate);
 
-		if (temp_u & 0x40000000) {
+		if (audio_rate.exists) {
 			/* Audio track specifies "exists" flag, malloc structure and copy components. */
 			s->audio[temp_l].exists = 1;
 			/* and for all audio tracks */
 			smk_malloc(s->audio[temp_l].buffer, s->audio[temp_l].max_buffer);
 
-			if (temp_u & 0x80000000)
+			if (audio_rate.dpcm)
 				s->audio[temp_l].compress = 1;
 
-			s->audio[temp_l].bitdepth = ((temp_u & 0x20000000) ? 16 : 8);
-			s->audio[temp_l].channels = ((temp_u & 0x10000000) ? 2 : 1);
+			s->audio[temp_l].bitdepth = (unsigned char)(audio_rate.bits16 ? 16 : 8);
+			s->audio[temp_l].channels = (unsigned char)(audio_rate.stereo ? 2 : 1);
 
-			if (temp_u & 0x0c000000) {
+			if (audio_rate.bink) {
 				fprintf(stderr, "libsmacker::smk_open_generic - Warning: audio track %ld is compressed with Bink (perceptual) Audio Codec: this is currently unsupported by libsmacker\n", temp_l);
 				s->audio[temp_l].compress = 2;
 			}
 
 			/* Bits 25 & 24 are unused. */
-			s->audio[temp_l].rate = (temp_u & 0x00FFFFFF);
+			s->audio[temp_l].rate = audio_rate.rate;
 		}
 	}
 
-	/* Skip over Dummy field */
-	smk_read_ul(temp_u);
 	/* FrameSizes and Keyframe marker are stored together. */
 	smk_malloc(s->keyframe, (s->f + s->ring_frame));
 	smk_malloc(s->chunk_size, (s->f + s->ring_frame) * sizeof(unsigned long));
 
 	for (temp_u = 0; temp_u < (s->f + s->ring_frame); temp_u ++) {
-		smk_read_ul(s->chunk_size[temp_u]);
+		smk_read(buf, 4);
+		frame_word = smk_header_read_u32(buf);
+		smk_header_unpack_frame_size(frame_word, &frame_size, &frame_key);
+		s->chunk_size[temp_u] = frame_size;
 
 		/* Set Keyframe */
-		if (s->chunk_size[temp_u] & 0x01)
+		if (frame_key)
 			s->keyframe[temp_u] = 1;
-
-		/* Bits 1 is used, but the purpose is unknown. */
-		s->chunk_size[temp_u] &= 0xFFFFFFFC;
 	}
 
 	/* That was easy... Now read FrameTypes! */
@@ -888,7 +889,7 @@ static char smk_render(smk s)
 	p = buffer;
 
 	/* Palette record first */
-	if (s->frame_type[s->cur_frame] & 0x01) {
+	if (s->frame_type[s->cur_frame] & SMK_FRAME_HAS_PALETTE) {
 		/* need at least 1 byte to process */
 		if (!i) {
 			fprintf(stderr, "libsmacker::smk_render(s) - ERROR: frame %lu: insufficient data for a palette rec.\n", s->cur_frame);
@@ -909,7 +910,7 @@ static char smk_render(smk s)
 
 	/* Unpack audio chunks */
 	for (track = 0; track < 7; track ++) {
-		if (s->frame_type[s->cur_frame] & (0x02 << track)) {
+		if (s->frame_type[s->cur_frame] & SMK_FRAME_AUDIO_TRACK(track)) {
 			/* need at least 4 byte to process */
 			if (i < 4) {
 				fprintf(stderr, "libsmacker::smk_render(s) - ERROR: frame %lu: insufficient data for audio[%u] rec.\n", s->cur_frame, track);

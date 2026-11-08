@@ -2,6 +2,7 @@
 
 #include "container.h"
 #include "encoder_internal.h"
+#include "format/header.h"
 #include "format/huffman.h"
 #include "format/palette.h"
 #include "quantize.h"
@@ -51,18 +52,15 @@ size_t smk_enc_audio_align(const smk_enc_audio_info *info)
 /* Build the AudioRate descriptor, or fail on an unusable track format. */
 static int audio_descriptor(const smk_enc_audio_info *info, uint32_t *out)
 {
-    if (info->rate == 0 || info->rate > 0x00ffffffu)
+    if (info->rate == 0)
         return -1;
     if (info->channels != 1 && info->channels != 2)
         return -1;
     if (info->bits != 8 && info->bits != 16)
         return -1;
 
-    *out = 0x40000000u |
-           (info->bits == 16 ? 0x20000000u : 0u) |
-           (info->channels == 2 ? 0x10000000u : 0u) |
-           info->rate;
-    return 0;
+    return smk_header_pack_audio_rate(info->rate, info->bits == 16,
+                                       info->channels == 2, out);
 }
 
 /*
@@ -485,7 +483,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
             goto cleanup;
         }
 
-        type = emit_palette ? 0x01u : 0u;
+        type = emit_palette ? SMK_FRAME_HAS_PALETTE : 0u;
         video_size = smk_bw_byte_count(&frame_bits);
         payload_size = palette_size + video_size;
         for (track = 0; track < tracks; track++) {
@@ -498,7 +496,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
                 goto cleanup;
             }
             payload_size += 4 + frame_audio_bytes[track];
-            type |= 0x02u << track;
+            type |= SMK_FRAME_AUDIO_TRACK(track);
         }
 
         payload = (uint8_t *)malloc(payload_size != 0 ? payload_size : 1);
@@ -615,7 +613,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
         smk_bw_free(&frame_bits);
 
         if (smk_container_add_frame(&container, ring_keyframe,
-                                    emit_palette ? 0x01u : 0u, payload,
+                                    emit_palette ? SMK_FRAME_HAS_PALETTE : 0u, payload,
                                     payload_size, err, errlen) != 0) {
             free(payload);
             status = SMK_ENC_ERR_ENCODE;

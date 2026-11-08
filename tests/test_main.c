@@ -20,6 +20,10 @@ void test_palette_write_one_color(void);
 void test_palette_skip_preserves(void);
 void test_palette_copy_from_previous(void);
 void test_palette_rejects_deep_color(void);
+void test_header_frame_rate(void);
+void test_header_audio_rate(void);
+void test_header_frame_size(void);
+void test_header_pack_roundtrip(void);
 void test_tga_24_uncompressed_bottom_up(void);
 void test_tga_32_rle_top_down_alpha(void);
 void test_tga_8_colormapped(void);
@@ -110,6 +114,10 @@ static const smk_test_case tests[] = {
     { "palette_skip_preserves", test_palette_skip_preserves },
     { "palette_copy_from_previous", test_palette_copy_from_previous },
     { "palette_rejects_deep_color", test_palette_rejects_deep_color },
+    { "header_frame_rate", test_header_frame_rate },
+    { "header_audio_rate", test_header_audio_rate },
+    { "header_frame_size", test_header_frame_size },
+    { "header_pack_roundtrip", test_header_pack_roundtrip },
     { "tga_24_uncompressed_bottom_up", test_tga_24_uncompressed_bottom_up },
     { "tga_32_rle_top_down_alpha", test_tga_32_rle_top_down_alpha },
     { "tga_8_colormapped", test_tga_8_colormapped },

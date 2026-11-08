@@ -1,10 +1,10 @@
 #include "container.h"
 
-#include <limits.h>
+#include "format/header.h"
+
 #include <stdlib.h>
 #include <string.h>
 
-#define SMK_HEADER_SIZE 104
 #define SMK_MAX_TRACKS SMK_MAX_AUDIO_TRACKS
 
 static int fail(char *err, size_t errlen, const char *message)
@@ -25,46 +25,8 @@ static int write_u32(FILE *fp, uint32_t value)
 {
     uint8_t bytes[4];
 
-    bytes[0] = (uint8_t)(value & 0xffu);
-    bytes[1] = (uint8_t)((value >> 8) & 0xffu);
-    bytes[2] = (uint8_t)((value >> 16) & 0xffu);
-    bytes[3] = (uint8_t)((value >> 24) & 0xffu);
+    smk_header_write_u32(bytes, value);
     return write_bytes(fp, bytes, sizeof(bytes));
-}
-
-/*
- * The frame rate field holds either milliseconds per frame (positive) or
- * units of 10 microseconds per frame (negative). Pick whichever is closer.
- */
-static int32_t frame_rate_field(unsigned num, unsigned den)
-{
-    double us;
-    long ms;
-    long tens;
-    double ms_error;
-    double tens_error;
-
-    if (num == 0 || den == 0)
-        return 0;
-    us = 1000000.0 * (double)den / (double)num;
-
-    ms = (long)(us / 1000.0 + 0.5);
-    tens = (long)(us / 10.0 + 0.5);
-    if (tens < 1)
-        tens = 1;
-    ms_error = (double)ms * 1000.0 - us;
-    tens_error = (double)tens * 10.0 - us;
-    if (ms_error < 0.0)
-        ms_error = -ms_error;
-    if (tens_error < 0.0)
-        tens_error = -tens_error;
-
-    if (ms >= 1 && ms <= INT32_MAX &&
-        (tens > INT32_MAX || ms_error <= tens_error))
-        return (int32_t)ms;
-    if (tens <= INT32_MAX)
-        return (int32_t)-tens;
-    return 0;
 }
 
 static void discard(smk_container *container)
@@ -124,33 +86,28 @@ int smk_container_open(smk_container *container,
     }
     container->open = 1;
 
-    if (write_bytes(container->file, "SMK2", 4) != 0 ||
-        write_u32(container->file, info->width) != 0 ||
-        write_u32(container->file, info->height) != 0 ||
-        write_u32(container->file, info->frames) != 0 ||
-        write_u32(container->file,
-                  (uint32_t)frame_rate_field(info->fps_num,
-                                             info->fps_den)) != 0 ||
-        write_u32(container->file, info->ring ? 1u : 0u) != 0)
-        goto write_error;
+    {
+        smk_file_header header;
+        uint8_t header_bytes[SMK_HEADER_SIZE];
 
-    for (i = 0; i < SMK_MAX_TRACKS; i++) {
-        if (write_u32(container->file, info->audio_size[i]) != 0)
+        memset(&header, 0, sizeof(header));
+        memcpy(header.signature, "SMK2", 4);
+        header.width = info->width;
+        header.height = info->height;
+        header.frames = info->frames;
+        header.frame_rate = smk_header_frame_rate(info->fps_num, info->fps_den);
+        header.flags = info->ring ? SMK_HEADER_FLAG_RING : 0u;
+        for (i = 0; i < SMK_MAX_TRACKS; i++) {
+            header.audio_size[i] = info->audio_size[i];
+            header.audio_rate[i] = info->audio_rate[i];
+        }
+        header.trees_size = (uint32_t)info->trees_size;
+        for (i = 0; i < 4; i++)
+            header.tree_size[i] = info->tree_sizes[i];
+        if (smk_header_pack(&header, header_bytes) != 0 ||
+            write_bytes(container->file, header_bytes, SMK_HEADER_SIZE) != 0)
             goto write_error;
     }
-
-    if (write_u32(container->file, (uint32_t)info->trees_size) != 0)
-        goto write_error;
-    for (i = 0; i < 4; i++) {
-        if (write_u32(container->file, info->tree_sizes[i]) != 0)
-            goto write_error;
-    }
-    for (i = 0; i < SMK_MAX_TRACKS; i++) {
-        if (write_u32(container->file, info->audio_rate[i]) != 0)
-            goto write_error;
-    }
-    if (write_u32(container->file, 0) != 0)
-        goto write_error;
 
     if (write_bytes(container->file, container->sizes,
                     (size_t)physical * sizeof(uint32_t)) != 0 ||
@@ -194,7 +151,7 @@ int smk_container_add_frame(smk_container *container, int keyframe,
         return fail(err, errlen, "failed to write frame");
 
     container->sizes[container->next_frame] =
-        ((uint32_t)padded & 0xfffffffcu) | (keyframe ? 1u : 0u);
+        smk_header_pack_frame_size((uint32_t)padded, keyframe);
     container->types[container->next_frame] = (uint8_t)(type & 0xffu);
     container->next_frame++;
     return 0;
