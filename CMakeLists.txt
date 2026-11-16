@@ -14,6 +14,7 @@ option(SMACKER_BUILD_STATIC "Build the static libsmacker library" ON)
 option(SMACKER_BUILD_SHARED "Build the shared libsmacker library" ON)
 option(SMACKER_BUILD_TOOLS "Build the example programs" OFF)
 option(SMACKER_BUILD_TESTS "Build the encoder test suite" OFF)
+option(SMACKER_BUILD_GL_PLAYER "Build the OpenGL smk_gl_player example" ON)
 set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
   "SDL version for smk_sdl_player: AUTO, 2 or 3")
 set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
@@ -156,6 +157,34 @@ if(SMACKER_BUILD_TOOLS)
       target_link_libraries(smk_sdl_player PRIVATE
         smacker_static ${SMACKER_SDL_TARGET})
       message(STATUS "smk_sdl_player: linking smacker_static and ${SMACKER_SDL_TARGET}")
+    endif()
+  endif()
+
+  # The OpenGL player needs the same static library and SDL target plus a
+  # usable GL package. Each missing piece skips only this example.
+  if(SMACKER_BUILD_GL_PLAYER)
+    if(NOT SMACKER_BUILD_STATIC)
+      message(WARNING
+        "smk_gl_player requires SMACKER_BUILD_STATIC=ON; skipping it.")
+    elseif(SMACKER_SDL_TARGET STREQUAL "")
+      message(WARNING "SDL2/SDL3 not found; skipping smk_gl_player.")
+    else()
+      find_package(OpenGL QUIET)
+      if(NOT OpenGL_FOUND)
+        message(WARNING "OpenGL not found; skipping smk_gl_player.")
+      else()
+        add_executable(smk_gl_player src/tools/smk_gl_player.c)
+        smacker_set_compile_settings(smk_gl_player)
+        if(SMACKER_USE_SDL3)
+          target_compile_definitions(smk_gl_player PRIVATE SMK_USE_SDL3=1)
+        elseif(TARGET SDL2::SDL2main)
+          target_link_libraries(smk_gl_player PRIVATE SDL2::SDL2main)
+        endif()
+        target_link_libraries(smk_gl_player PRIVATE
+          smacker_static ${SMACKER_SDL_TARGET} OpenGL::GL)
+        message(STATUS
+          "smk_gl_player: linking smacker_static, ${SMACKER_SDL_TARGET}, and OpenGL::GL")
+      endif()
     endif()
   endif()
 endif()
