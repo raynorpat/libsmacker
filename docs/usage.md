@@ -594,8 +594,9 @@ The source tree includes four programs that use the public API:
   SDL2 or SDL3. Shows frame pacing, palette conversion, and audio queueing.
 - `src/tools/smk_gl_player.c` — plays video and the first audio track through
   SDL and an OpenGL 3.3 core context. The decoded frame goes up as an 8-bit
-  index texture; a fragment shader resolves the palette, duplicates rows for
-  the y-scale hint, and the GPU scales and letterboxes the image.
+  index texture; a fragment shader resolves the palette, and the doubled
+  viewport with nearest sampling honours the y-scale hint. The GPU scales the
+  image; the CPU computes the letterbox viewport.
 
 Build them with:
 

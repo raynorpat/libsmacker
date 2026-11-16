@@ -31,7 +31,7 @@ libsmacker is released under the Lesser GNU Public License, v2.1. See the file
 
 See [docs/usage.md](docs/usage.md) for the API and a complete example, or the
 [webpage](http://libsmacker.sourceforge.net) for the original documentation.
-The source package additionally includes three example programs:
+The source package additionally includes five example programs:
 
 - `src/tools/driver.c` - dumps all frames of a file to a `bmp/` subdirectory, and
   all audio as raw streams to `out_*.raw` files in the current working directory.
