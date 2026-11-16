@@ -21,10 +21,13 @@ add_executable(smk_tests
   test_verify.c
   test_roundtrip_avi.c
   ${SMACKER_ENCODER_SOURCES}
-  ${SMACKER_TOOL_INPUT_SOURCES})
+  ${SMACKER_TOOL_INPUT_SOURCES}
+  ${SMACKER_PLAYER_COMMON_SOURCES}
+  test_player_common.c)
 
 target_include_directories(smk_tests PRIVATE
   ${CMAKE_SOURCE_DIR}/src/encoder
+  ${CMAKE_SOURCE_DIR}/src/tools
   ${CMAKE_SOURCE_DIR}/src/tools/smk_build
   ${CMAKE_CURRENT_SOURCE_DIR})
 

@@ -87,6 +87,8 @@ set(SMACKER_ENCODER_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/encoder/verify.c)
 set(SMACKER_TOOL_INPUT_SOURCES
   ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/smk_build/image_dir.c)
+set(SMACKER_PLAYER_COMMON_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/smk_player_common.c)
 
 if(SMACKER_BUILD_TOOLS)
   add_executable(driver src/tools/driver.c)

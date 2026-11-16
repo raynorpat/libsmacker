@@ -95,6 +95,17 @@ void test_roundtrip_avi_end_to_end(void);
 void test_roundtrip_avi_unsupported_codec(void);
 void test_roundtrip_avi_smk2avi_hdrl_size(void);
 void test_avi_truncation_matrix(void);
+void test_letterbox_fit_width(void);
+void test_letterbox_exact(void);
+void test_letterbox_fit_height(void);
+void test_letterbox_zero_size(void);
+void test_letterbox_y_double(void);
+void test_letterbox_rounding(void);
+void test_palette_cache(void);
+void test_parse_options_success(void);
+void test_parse_options_default_limit(void);
+void test_parse_options_rejects_extra_path(void);
+void test_parse_options_frames_missing(void);
 
 static const smk_test_case tests[] = {
     { "cli_defaults", test_cli_defaults },
@@ -192,6 +203,17 @@ static const smk_test_case tests[] = {
     { "roundtrip_avi_unsupported_codec", test_roundtrip_avi_unsupported_codec },
     { "roundtrip_avi_smk2avi_hdrl_size", test_roundtrip_avi_smk2avi_hdrl_size },
     { "avi_truncation_matrix", test_avi_truncation_matrix },
+    { "letterbox_fit_width", test_letterbox_fit_width },
+    { "letterbox_exact", test_letterbox_exact },
+    { "letterbox_fit_height", test_letterbox_fit_height },
+    { "letterbox_zero_size", test_letterbox_zero_size },
+    { "letterbox_y_double", test_letterbox_y_double },
+    { "letterbox_rounding", test_letterbox_rounding },
+    { "palette_cache", test_palette_cache },
+    { "parse_options_success", test_parse_options_success },
+    { "parse_options_default_limit", test_parse_options_default_limit },
+    { "parse_options_rejects_extra_path", test_parse_options_rejects_extra_path },
+    { "parse_options_frames_missing", test_parse_options_frames_missing },
     { NULL, NULL }
 };
 
