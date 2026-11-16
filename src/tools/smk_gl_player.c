@@ -31,6 +31,7 @@
 #endif
 
 #include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -45,6 +46,9 @@
 #define SMK_GL_SET_ATTR(attr, value) \
 	(!SDL_GL_SetAttribute((attr), (value)))
 typedef SDL_AudioStream *smk_audio_out;
+#ifndef SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK
+#define SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK SDL_AUDIO_DEVICE_DEFAULT_OUTPUT
+#endif
 #else
 #define SMK_EVENT_QUIT		SDL_QUIT
 #define SMK_EVENT_KEY_DOWN	SDL_KEYDOWN
@@ -699,6 +703,21 @@ drawable_size(SDL_Window *window, int *w, int *h)
 #endif
 }
 
+/* Events that invalidate the backbuffer: redraw even while paused. */
+static int
+is_redraw_event(const SDL_Event *event)
+{
+#ifdef SMK_USE_SDL3
+	return event->type == SDL_EVENT_WINDOW_RESIZED ||
+		event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+		event->type == SDL_EVENT_WINDOW_EXPOSED;
+#else
+	return event->type == SDL_WINDOWEVENT &&
+		(event->window.event == SDL_WINDOWEVENT_SIZE_CHANGED ||
+		 event->window.event == SDL_WINDOWEVENT_EXPOSED);
+#endif
+}
+
 static const char *
 gl_string(GLenum name)
 {
@@ -722,6 +741,7 @@ main(int argc, char *argv[])
 	int		status = 0;
 	int		quit = 0;
 	unsigned long	presented = 0;
+	unsigned long	last_frame = (unsigned long) -1;
 	double		frame_ms;
 	char		title[512];
 	char		rc;
@@ -763,6 +783,16 @@ main(int argc, char *argv[])
 		usf = 1000000.0 / 30.0;
 	frame_ms = usf / 1000.0;
 	y_double = y_scale != SMK_FLAG_Y_NONE;
+
+	/* The window and texture sizes are passed to SDL and GL as ints. */
+	if (w > (unsigned long) INT_MAX ||
+		h > (unsigned long) (INT_MAX / (y_double ? 2 : 1))) {
+		fprintf(stderr,
+			"%s has unsupported video dimensions: %lu x %lu\n",
+			opt.path, w, h);
+		smk_close(s);
+		return 1;
+	}
 
 	printf("Opened file %s\nWidth: %lu\nHeight: %lu\nFrames: %lu\nFPS: %f\n",
 		opt.path, w, h, frames, 1000000.0 / usf);
@@ -809,6 +839,20 @@ main(int argc, char *argv[])
 	printf("GL_VERSION: %s\nGL_RENDERER: %s\n",
 		gl_string(GL_VERSION), gl_string(GL_RENDERER));
 
+	{
+		GLint	max_tex = 0;
+
+		glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_tex);
+		if (max_tex > 0 && (w > (unsigned long) max_tex ||
+			h > (unsigned long) max_tex)) {
+			fprintf(stderr,
+				"%lu x %lu exceeds the GPU texture limit of %d\n",
+				w, h, (int) max_tex);
+			status = 1;
+			goto done;
+		}
+	}
+
 	renderer_started = 1;
 	if (gl_renderer_init(&renderer, w, h) != 0) {
 		fputs("OpenGL renderer initialization failed\n", stderr);
@@ -823,16 +867,8 @@ main(int argc, char *argv[])
 		goto done;
 	}
 
-	smk_enable_video(s, 1);
-	rc = smk_first(s);
-	if (rc == SMK_ERROR) {
-		fprintf(stderr, "Failed to decode the first frame of %s.\n",
-			opt.path);
-		status = 1;
-		goto done;
-	}
-
-	/* Play the first audio track that exists (normally track 0). */
+	/* Play the first audio track that exists (normally track 0). Enable it
+	 * before smk_first so the first frame's audio chunk is decoded too. */
 	smk_info_audio(s, &track_mask, channels, bitdepth, rates);
 	for (i = 0; i < 7; i++) {
 		if (track_mask & (1u << i)) {
@@ -863,6 +899,15 @@ main(int argc, char *argv[])
 		}
 	}
 
+	smk_enable_video(s, 1);
+	rc = smk_first(s);
+	if (rc == SMK_ERROR) {
+		fprintf(stderr, "Failed to decode the first frame of %s.\n",
+			opt.path);
+		status = 1;
+		goto done;
+	}
+
 	next_ms = (double) SDL_GetTicks();
 
 	while (!quit) {
@@ -874,6 +919,10 @@ main(int argc, char *argv[])
 			if (event.type == SMK_EVENT_QUIT) {
 				quit = 1;
 				break;
+			}
+			if (is_redraw_event(&event)) {
+				redraw = 1;
+				continue;
 			}
 			if (event.type != SMK_EVENT_KEY_DOWN)
 				continue;
@@ -941,7 +990,15 @@ main(int argc, char *argv[])
 			SDL_GL_SwapWindow(window);
 			redraw = 0;
 
-			presented++;
+			{
+				unsigned long	shown = 0;
+
+				smk_info_all(s, &shown, NULL, NULL);
+				if (shown != last_frame) {
+					last_frame = shown;
+					presented++;
+				}
+			}
 			if (opt.frame_limit != 0 &&
 				presented >= opt.frame_limit)
 				break;
