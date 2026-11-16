@@ -39,6 +39,9 @@ The source package additionally includes three example programs:
   24-bit color and a PCM audio stream.
 - `src/tools/smk_sdl_player.c` - plays a `.smk` file in a window with sound
   using SDL3 (or SDL2). Links against the static libsmacker library.
+- `src/tools/smk_gl_player.c` - plays a `.smk` file with OpenGL 3.3. The frame
+  stays palettized: an 8-bit index texture and a palette texture go to the
+  GPU, and a GLSL shader resolves the palette and scales the image.
 - `src/tools/smk_build/` - encodes image directories or AVI files into SMK2,
   with adaptive palettes, delta frames, PCM audio, and optional verification.
 
@@ -77,7 +80,8 @@ cmake --build build
 The `driver`, `smk2avi`, and `smk_build` programs are always built by that
 option. The SDL playback example is added when SDL3 or SDL2 is found and the
 static library is enabled. CMake prefers SDL3; pass `-DSMACKER_SDL_VERSION=2`
-or `-DSMACKER_SDL_VERSION=3` to force a version.
+or `-DSMACKER_SDL_VERSION=3` to force a version. The OpenGL playback example
+is added when an OpenGL package is found as well.
 
 To build and run the encoder test suite as well:
 
@@ -98,6 +102,8 @@ installation instructions.
 - Install `smacker.h` and the libsmacker libraries with `cmake --install`.
 - Added optional `driver` and `smk2avi` build targets.
 - Added `smk_sdl_player`, an SDL2/SDL3 playback example.
+- Added `smk_gl_player`, an OpenGL 3.3 playback example that keeps frames
+  palettized and resolves the palette in GLSL.
 - Added `smk_build`, an SMK2 encoder for image directories, WAV audio, and
   smk2avi-style AVI files, with adaptive palettes, delta frames, keyframes,
   ring frames, PCM audio, and round-trip verification.

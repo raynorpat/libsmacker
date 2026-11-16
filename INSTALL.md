@@ -47,12 +47,16 @@ The build is controlled by these CMake options:
 | `SMACKER_BUILD_STATIC` | `ON` | Build the static libsmacker library. |
 | `SMACKER_BUILD_SHARED` | `ON` | Build the shared libsmacker library. |
 | `SMACKER_BUILD_TOOLS` | `OFF` | Build the example programs. |
+| `SMACKER_BUILD_GL_PLAYER` | `ON` | Build the OpenGL `smk_gl_player` example. |
 | `SMACKER_SDL_VERSION` | `AUTO` | SDL version for `smk_sdl_player`: `AUTO`, `2` or `3`. |
 
 At least one of `SMACKER_BUILD_STATIC` or `SMACKER_BUILD_SHARED` must be enabled.
 
 `smk_sdl_player` is only built when `SMACKER_BUILD_STATIC` is `ON` and an SDL2
 or SDL3 CMake package is found. `AUTO` prefers SDL3 and falls back to SDL2.
+`smk_gl_player` needs the same SDL package plus an OpenGL package; if OpenGL
+is not found, only that example is skipped and the rest of the build
+continues.
 
 For example, to build only the static library and the example programs:
 

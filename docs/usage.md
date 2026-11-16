@@ -577,12 +577,13 @@ device first so old audio does not play after the jump.
   frame buffer.
 - **Y-scale flags are hints only.** `smk_info_video` reports them, but the
   decoder never scales or deinterlaces the image.
-- **The playback examples are not hardened.** `driver`, `smk2avi`, and
-  `smk_sdl_player` demonstrate the API but do not validate untrusted input.
+- **The playback examples are not hardened.** `driver`, `smk2avi`,
+  `smk_sdl_player`, and `smk_gl_player` demonstrate the API but do not
+  validate untrusted input.
 
 ## Example programs
 
-The source tree includes three programs that use the public API:
+The source tree includes four programs that use the public API:
 
 - `src/tools/driver.c` — decodes every frame to a BMP and every audio track to
   a raw file. Uses memory mode.
@@ -591,6 +592,10 @@ The source tree includes three programs that use the public API:
   container writing.
 - `src/tools/smk_sdl_player.c` — plays video and the first audio track through
   SDL2 or SDL3. Shows frame pacing, palette conversion, and audio queueing.
+- `src/tools/smk_gl_player.c` — plays video and the first audio track through
+  SDL and an OpenGL 3.3 core context. The decoded frame goes up as an 8-bit
+  index texture; a fragment shader resolves the palette, duplicates rows for
+  the y-scale hint, and the GPU scales and letterboxes the image.
 
 Build them with:
 
@@ -600,6 +605,8 @@ cmake --build build
 ./build/driver file.smk
 ./build/smk2avi file.smk
 ./build/smk_sdl_player file.smk
+./build/smk_gl_player file.smk
 ```
 
-See [INSTALL.md](../INSTALL.md) for SDL selection and other build details.
+See [INSTALL.md](../INSTALL.md) for SDL and OpenGL selection and other build
+details.
