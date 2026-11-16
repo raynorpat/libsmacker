@@ -21,6 +21,7 @@ option(SMACKER_BUILD_TESTS "Build the encoder test suite" OFF)
 option(SMACKER_BUILD_GL_PLAYER "Build the OpenGL smk_gl_player example" ON)
 option(SMACKER_BUILD_METAL_PLAYER "Build the Metal smk_metal_player example" ON)
 option(SMACKER_BUILD_VK_PLAYER "Build the Vulkan smk_vk_player example" ON)
+option(SMACKER_BUILD_D3D_PLAYERS "Build the Windows D3D players" ON)
 set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
   "SDL version for smk_sdl_player: AUTO, 2 or 3")
 set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
@@ -130,7 +131,8 @@ if(SMACKER_BUILD_TOOLS)
     set(SMACKER_SDL_TARGET "")
     set(SMACKER_USE_SDL3 OFF)
 
-    if(SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "3")
+    if((SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "3")
+        AND NOT WIN32)
       find_package(SDL3 QUIET CONFIG)
       if(SDL3_FOUND)
         set(SMACKER_SDL_TARGET SDL3::SDL3)
@@ -142,7 +144,8 @@ if(SMACKER_BUILD_TOOLS)
     endif()
 
     if(SMACKER_SDL_TARGET STREQUAL "" AND
-        (SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "2"))
+        (SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "2")
+        AND NOT WIN32)
       find_package(SDL2 QUIET CONFIG)
       if(SDL2_FOUND)
         set(SMACKER_SDL_TARGET SDL2::SDL2)
@@ -170,7 +173,7 @@ if(SMACKER_BUILD_TOOLS)
 
   # The OpenGL player needs the same static library and SDL target plus a
   # usable GL package. Each missing piece skips only this example.
-  if(SMACKER_BUILD_GL_PLAYER)
+  if(SMACKER_BUILD_GL_PLAYER AND NOT WIN32)
     if(NOT SMACKER_BUILD_STATIC)
       message(WARNING
         "smk_gl_player requires SMACKER_BUILD_STATIC=ON; skipping it.")
@@ -289,6 +292,23 @@ if(SMACKER_BUILD_TOOLS)
         message(STATUS
           "smk_vk_player: linking smacker_static, ${SMACKER_SDL_TARGET}, and Vulkan")
       endif()
+    endif()
+  endif()
+
+  # Windows-only D3D players: plain Win32 and waveOut, no SDL.
+  if(SMACKER_BUILD_D3D_PLAYERS AND WIN32)
+    if(NOT SMACKER_BUILD_STATIC)
+      message(WARNING
+        "The D3D players require SMACKER_BUILD_STATIC=ON; skipping them.")
+    else()
+      add_executable(smk_d3d11_player
+        src/tools/smk_d3d11_player.c
+        src/tools/smk_win32_common.c
+        ${SMACKER_PLAYER_COMMON_SOURCES})
+      smacker_set_compile_settings(smk_d3d11_player)
+      target_link_libraries(smk_d3d11_player PRIVATE
+        smacker_static d3d11 dxgi dxguid winmm user32 gdi32)
+      message(STATUS "smk_d3d11_player: linking Win32 and D3D11")
     endif()
   endif()
 endif()
