@@ -1,6 +1,10 @@
 cmake_minimum_required(VERSION 3.16)
 project(libsmacker VERSION 1.2.0 LANGUAGES C)
 
+if(APPLE)
+  enable_language(OBJC)
+endif()
+
 # Default to an optimized build with symbols for single-config generators.
 # Multi-config generators choose the configuration at build time instead.
 get_property(isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -15,6 +19,7 @@ option(SMACKER_BUILD_SHARED "Build the shared libsmacker library" ON)
 option(SMACKER_BUILD_TOOLS "Build the example programs" OFF)
 option(SMACKER_BUILD_TESTS "Build the encoder test suite" OFF)
 option(SMACKER_BUILD_GL_PLAYER "Build the OpenGL smk_gl_player example" ON)
+option(SMACKER_BUILD_METAL_PLAYER "Build the Metal smk_metal_player example" ON)
 set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
   "SDL version for smk_sdl_player: AUTO, 2 or 3")
 set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
@@ -186,6 +191,45 @@ if(SMACKER_BUILD_TOOLS)
           smacker_static ${SMACKER_SDL_TARGET} OpenGL::GL)
         message(STATUS
           "smk_gl_player: linking smacker_static, ${SMACKER_SDL_TARGET}, and OpenGL::GL")
+      endif()
+    endif()
+  endif()
+
+  # Metal player: SDL window/audio plus SDL_Metal, Apple only.
+  if(SMACKER_BUILD_METAL_PLAYER AND APPLE)
+    if(NOT SMACKER_BUILD_STATIC)
+      message(WARNING
+        "smk_metal_player requires SMACKER_BUILD_STATIC=ON; skipping it.")
+    elseif(SMACKER_SDL_TARGET STREQUAL "")
+      message(WARNING "SDL2/SDL3 not found; skipping smk_metal_player.")
+    else()
+      find_library(SMACKER_METAL_FRAMEWORK Metal)
+      find_library(SMACKER_QUARTZCORE_FRAMEWORK QuartzCore)
+      find_library(SMACKER_FOUNDATION_FRAMEWORK Foundation)
+      if(NOT SMACKER_METAL_FRAMEWORK OR NOT SMACKER_QUARTZCORE_FRAMEWORK
+          OR NOT SMACKER_FOUNDATION_FRAMEWORK)
+        message(WARNING
+          "Metal/QuartzCore not found; skipping smk_metal_player.")
+      else()
+        add_executable(smk_metal_player
+          src/tools/smk_metal_player.m
+          src/tools/smk_sdl_common.c
+          ${SMACKER_PLAYER_COMMON_SOURCES})
+        smacker_set_compile_settings(smk_metal_player)
+        set_target_properties(smk_metal_player PROPERTIES
+          LINKER_LANGUAGE OBJC)
+        if(SMACKER_USE_SDL3)
+          target_compile_definitions(smk_metal_player PRIVATE SMK_USE_SDL3=1)
+        elseif(TARGET SDL2::SDL2main)
+          target_link_libraries(smk_metal_player PRIVATE SDL2::SDL2main)
+        endif()
+        target_link_libraries(smk_metal_player PRIVATE
+          smacker_static ${SMACKER_SDL_TARGET}
+          ${SMACKER_METAL_FRAMEWORK}
+          ${SMACKER_QUARTZCORE_FRAMEWORK}
+          ${SMACKER_FOUNDATION_FRAMEWORK})
+        message(STATUS
+          "smk_metal_player: linking smacker_static, ${SMACKER_SDL_TARGET}, and Metal")
       endif()
     endif()
   endif()
