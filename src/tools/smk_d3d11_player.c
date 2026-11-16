@@ -58,6 +58,7 @@ struct d3d11_state {
 	ID3D11ShaderResourceView *frame_srv;
 	ID3D11ShaderResourceView *palette_srv;
 	ID3D11SamplerState	*sampler;
+	ID3D11RasterizerState	*raster;
 	HMODULE			compiler;
 	d3d_compile_fn		compile;
 	unsigned long		w;
@@ -236,6 +237,20 @@ d3d11_init(void *ctx, HWND hwnd, unsigned long w, unsigned long h)
 	if (FAILED(hr))
 		return -1;
 
+	{
+		D3D11_RASTERIZER_DESC raster_desc;
+
+		memset(&raster_desc, 0, sizeof(raster_desc));
+		raster_desc.FillMode = D3D11_FILL_SOLID;
+		raster_desc.CullMode = D3D11_CULL_NONE;
+		raster_desc.FrontCounterClockwise = FALSE;
+		raster_desc.DepthClipEnable = TRUE;
+		hr = ID3D11Device_CreateRasterizerState(st->device,
+			&raster_desc, &st->raster);
+		if (FAILED(hr))
+			return -1;
+	}
+
 	return 0;
 }
 
@@ -322,6 +337,7 @@ d3d11_present(void *ctx, const unsigned char *frame,
 	vp.MinDepth = 0.0f;
 	vp.MaxDepth = 1.0f;
 	ID3D11DeviceContext_RSSetViewports(st->context, 1, &vp);
+	ID3D11DeviceContext_RSSetState(st->context, st->raster);
 	ID3D11DeviceContext_IASetPrimitiveTopology(st->context,
 		D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	ID3D11DeviceContext_VSSetShader(st->context, st->vs, NULL, 0);
@@ -353,6 +369,7 @@ d3d11_shutdown(void *ctx)
 			(p) = NULL; \
 		} \
 	} while (0)
+	SMK_RELEASE(st->raster);
 	SMK_RELEASE(st->sampler);
 	SMK_RELEASE(st->palette_srv);
 	SMK_RELEASE(st->frame_srv);

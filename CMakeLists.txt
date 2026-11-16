@@ -132,7 +132,7 @@ if(SMACKER_BUILD_TOOLS)
     set(SMACKER_USE_SDL3 OFF)
 
     if((SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "3")
-        AND NOT WIN32)
+        AND NOT CMAKE_CROSSCOMPILING)
       find_package(SDL3 QUIET CONFIG)
       if(SDL3_FOUND)
         set(SMACKER_SDL_TARGET SDL3::SDL3)
@@ -145,7 +145,7 @@ if(SMACKER_BUILD_TOOLS)
 
     if(SMACKER_SDL_TARGET STREQUAL "" AND
         (SMACKER_SDL_VERSION STREQUAL "AUTO" OR SMACKER_SDL_VERSION STREQUAL "2")
-        AND NOT WIN32)
+        AND NOT CMAKE_CROSSCOMPILING)
       find_package(SDL2 QUIET CONFIG)
       if(SDL2_FOUND)
         set(SMACKER_SDL_TARGET SDL2::SDL2)
@@ -173,7 +173,7 @@ if(SMACKER_BUILD_TOOLS)
 
   # The OpenGL player needs the same static library and SDL target plus a
   # usable GL package. Each missing piece skips only this example.
-  if(SMACKER_BUILD_GL_PLAYER AND NOT WIN32)
+  if(SMACKER_BUILD_GL_PLAYER AND NOT CMAKE_CROSSCOMPILING)
     if(NOT SMACKER_BUILD_STATIC)
       message(WARNING
         "smk_gl_player requires SMACKER_BUILD_STATIC=ON; skipping it.")

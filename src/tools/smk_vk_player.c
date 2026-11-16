@@ -1050,13 +1050,12 @@ vk_present(void *ctx, const unsigned char *frame,
 
 	result = vkAcquireNextImageKHR(st->device, st->swapchain, UINT64_MAX,
 		st->image_available, VK_NULL_HANDLE, &index);
-	if (result == VK_ERROR_OUT_OF_DATE_KHR ||
-		result == VK_SUBOPTIMAL_KHR) {
+	if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 		if (recreate_swapchain(st, drawable_w, drawable_h) != 0)
 			return -1;
 		return 1;
 	}
-	if (result != VK_SUCCESS) {
+	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		fprintf(stderr, "vkAcquireNextImageKHR failed: %d\n",
 			(int) result);
 		return -1;

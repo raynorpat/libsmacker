@@ -266,6 +266,8 @@ upload_frame(struct d3d9_state *st, const unsigned char *frame)
 	unsigned long	y;
 
 	hr = IDirect3DTexture9_LockRect(st->frame_tex, 0, &locked, NULL, 0);
+	if (hr == D3DERR_DEVICELOST)
+		return 1;
 	if (FAILED(hr))
 		return -1;
 	for (y = 0; y < st->h; y++)
@@ -284,6 +286,8 @@ upload_palette(struct d3d9_state *st, const unsigned char *palette)
 	HRESULT		hr;
 
 	hr = IDirect3DTexture9_LockRect(st->palette_tex, 0, &locked, NULL, 0);
+	if (hr == D3DERR_DEVICELOST)
+		return 1;
 	if (FAILED(hr))
 		return -1;
 	lane = (unsigned int *) locked.pBits;
@@ -304,8 +308,9 @@ d3d9_present(void *ctx, const unsigned char *frame,
 {
 	struct d3d9_state	*st = ctx;
 	struct d3d9_vertex	vertices[4];
-	HRESULT			hr;
+	HRESULT			hr, draw_hr, end_hr;
 	int			recover;
+	int			uploaded;
 
 	(void) y_double;	/* the RECT already has the doubled height */
 
@@ -322,11 +327,14 @@ d3d9_present(void *ctx, const unsigned char *frame,
 		return FAILED(hr) ? -1 : 0;
 	}
 
-	if (upload_frame(st, frame) != 0)
-		return -1;
-	if (smk_palette_changed(&st->palettes, palette) &&
-		upload_palette(st, palette) != 0)
-		return -1;
+	uploaded = upload_frame(st, frame);
+	if (uploaded != 0)
+		return uploaded;
+	if (smk_palette_changed(&st->palettes, palette)) {
+		uploaded = upload_palette(st, palette);
+		if (uploaded != 0)
+			return uploaded;
+	}
 
 	IDirect3DDevice9_Clear(st->device, 0, NULL, D3DCLEAR_TARGET,
 		D3DCOLOR_XRGB(0, 0, 0), 1.0f, 0);
@@ -354,12 +362,16 @@ d3d9_present(void *ctx, const unsigned char *frame,
 	}
 
 	hr = IDirect3DDevice9_BeginScene(st->device);
+	if (hr == D3DERR_DEVICELOST)
+		return 1;
 	if (FAILED(hr))
 		return -1;
-	hr = IDirect3DDevice9_DrawPrimitiveUP(st->device,
+	draw_hr = IDirect3DDevice9_DrawPrimitiveUP(st->device,
 		D3DPT_TRIANGLESTRIP, 2, vertices, sizeof(vertices[0]));
-	IDirect3DDevice9_EndScene(st->device);
-	if (FAILED(hr))
+	end_hr = IDirect3DDevice9_EndScene(st->device);
+	if (draw_hr == D3DERR_DEVICELOST || end_hr == D3DERR_DEVICELOST)
+		return 1;
+	if (FAILED(draw_hr) || FAILED(end_hr))
 		return -1;
 
 	hr = IDirect3DDevice9_Present(st->device, NULL, NULL, NULL, NULL);
