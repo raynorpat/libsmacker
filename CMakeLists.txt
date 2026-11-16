@@ -309,6 +309,15 @@ if(SMACKER_BUILD_TOOLS)
       target_link_libraries(smk_d3d11_player PRIVATE
         smacker_static d3d11 dxgi dxguid winmm user32 gdi32)
       message(STATUS "smk_d3d11_player: linking Win32 and D3D11")
+
+      add_executable(smk_d3d9_player
+        src/tools/smk_d3d9_player.c
+        src/tools/smk_win32_common.c
+        ${SMACKER_PLAYER_COMMON_SOURCES})
+      smacker_set_compile_settings(smk_d3d9_player)
+      target_link_libraries(smk_d3d9_player PRIVATE
+        smacker_static d3d9 dxguid winmm user32 gdi32)
+      message(STATUS "smk_d3d9_player: linking Win32 and D3D9")
     endif()
   endif()
 endif()
