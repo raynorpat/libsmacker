@@ -42,6 +42,8 @@
 #define SMK_EVENT_KEY(event)	((event).key.key)
 #define SMK_KEY_Q		SDLK_Q
 #define SMK_GL_DESTROY_CONTEXT	SDL_GL_DestroyContext
+#define SMK_GL_SET_ATTR(attr, value) \
+	(!SDL_GL_SetAttribute((attr), (value)))
 typedef SDL_AudioStream *smk_audio_out;
 #else
 #define SMK_EVENT_QUIT		SDL_QUIT
@@ -49,6 +51,8 @@ typedef SDL_AudioStream *smk_audio_out;
 #define SMK_EVENT_KEY(event)	((event).key.keysym.sym)
 #define SMK_KEY_Q		SDLK_q
 #define SMK_GL_DESTROY_CONTEXT	SDL_GL_DeleteContext
+#define SMK_GL_SET_ATTR(attr, value) \
+	(SDL_GL_SetAttribute((attr), (value)) != 0)
 typedef SDL_AudioDeviceID smk_audio_out;
 #endif
 
@@ -245,17 +249,29 @@ wait_until(double target_ms)
 		SDL_Delay((Uint32) (target_ms - now + 0.999));
 }
 
+/* GL attributes must be known before SDL creates the window, because some
+ * backends pick the pixel format or EGL config at window creation. */
+static int
+gl_attributes_set(void)
+{
+	if (SMK_GL_SET_ATTR(SDL_GL_CONTEXT_MAJOR_VERSION, 3) ||
+		SMK_GL_SET_ATTR(SDL_GL_CONTEXT_MINOR_VERSION, 3) ||
+		SMK_GL_SET_ATTR(SDL_GL_CONTEXT_PROFILE_MASK,
+			SDL_GL_CONTEXT_PROFILE_CORE) ||
+		SMK_GL_SET_ATTR(SDL_GL_DOUBLEBUFFER, 1) ||
+		SMK_GL_SET_ATTR(SDL_GL_DEPTH_SIZE, 0)) {
+		fprintf(stderr, "SDL GL attribute setup failed: %s\n",
+			SDL_GetError());
+		return -1;
+	}
+
+	return 0;
+}
+
 /* Request an OpenGL 3.3 core context and make it current. */
 static int
 gl_context_create(SDL_Window *window, SDL_GLContext *context)
 {
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
-	SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-		SDL_GL_CONTEXT_PROFILE_CORE);
-	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 0);
-
 	*context = SDL_GL_CreateContext(window);
 	if (*context == NULL)
 		return -1;
@@ -755,6 +771,11 @@ main(int argc, char *argv[])
 
 	if (video_init() != 0) {
 		fprintf(stderr, "SDL video init failed: %s\n", SDL_GetError());
+		status = 1;
+		goto done;
+	}
+
+	if (gl_attributes_set() != 0) {
 		status = 1;
 		goto done;
 	}
