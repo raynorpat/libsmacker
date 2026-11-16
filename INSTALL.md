@@ -48,6 +48,9 @@ The build is controlled by these CMake options:
 | `SMACKER_BUILD_SHARED` | `ON` | Build the shared libsmacker library. |
 | `SMACKER_BUILD_TOOLS` | `OFF` | Build the example programs. |
 | `SMACKER_BUILD_GL_PLAYER` | `ON` | Build the OpenGL `smk_gl_player` example. |
+| `SMACKER_BUILD_METAL_PLAYER` | `ON` | Build the Metal `smk_metal_player` example on Apple. |
+| `SMACKER_BUILD_VK_PLAYER` | `ON` | Build the Vulkan `smk_vk_player` example. |
+| `SMACKER_BUILD_D3D_PLAYERS` | `ON` | Build the Windows `smk_d3d9_player` and `smk_d3d11_player`. |
 | `SMACKER_SDL_VERSION` | `AUTO` | SDL version for `smk_sdl_player`: `AUTO`, `2` or `3`. |
 
 At least one of `SMACKER_BUILD_STATIC` or `SMACKER_BUILD_SHARED` must be enabled.
@@ -57,6 +60,12 @@ or SDL3 CMake package is found. `AUTO` prefers SDL3 and falls back to SDL2.
 `smk_gl_player` needs the same SDL package plus an OpenGL package; if OpenGL
 is not found, only that example is skipped and the rest of the build
 continues.
+
+`smk_vk_player` needs SDL, a Vulkan package, and `glslc` from shaderc.
+`smk_metal_player` needs SDL plus the Apple Metal and QuartzCore frameworks.
+`smk_d3d9_player` and `smk_d3d11_player` are built only for a Windows target
+and do not use SDL; they need the Win32, D3D9/D3D11, DXGI, and winmm import
+libraries, which mingw-w64 provides.
 
 For example, to build only the static library and the example programs:
 

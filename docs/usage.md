@@ -583,7 +583,7 @@ device first so old audio does not play after the jump.
 
 ## Example programs
 
-The source tree includes four programs that use the public API:
+The source tree includes eight programs that use the public API:
 
 - `src/tools/driver.c` — decodes every frame to a BMP and every audio track to
   a raw file. Uses memory mode.
@@ -597,6 +597,18 @@ The source tree includes four programs that use the public API:
   index texture; a fragment shader resolves the palette, and the doubled
   viewport with nearest sampling honours the y-scale hint. The GPU scales the
   image; the CPU computes the letterbox viewport.
+- `src/tools/smk_vk_player.c` — the same GPU palette path through Vulkan, with
+  SDL providing the window, surface, and audio. GLSL sources are compiled to
+  SPIR-V at build time. On macOS the MoltenVK ICD must be visible to the
+  loader, for example with
+  `VK_ICD_FILENAMES=/opt/homebrew/etc/vulkan/icd.d/MoltenVK_icd.json`.
+- `src/tools/smk_metal_player.m` — the same path through Metal and
+  `SDL_Metal`, with the MSL shader compiled at runtime.
+- `src/tools/smk_d3d11_player.c` — Windows-only Direct3D 11 player with a
+  Win32 window and `waveOut` audio. It does not use SDL; HLSL is compiled at
+  runtime through `d3dcompiler_47.dll`.
+- `src/tools/smk_d3d9_player.c` — Windows-only Direct3D 9 player sharing the
+  same Win32 and `waveOut` playback core.
 
 Build them with:
 
@@ -607,7 +619,14 @@ cmake --build build
 ./build/smk2avi file.smk
 ./build/smk_sdl_player file.smk
 ./build/smk_gl_player file.smk
+./build/smk_vk_player file.smk
+./build/smk_metal_player file.smk
+./build/smk_d3d11_player file.smk
+./build/smk_d3d9_player file.smk
 ```
 
-See [INSTALL.md](../INSTALL.md) for SDL and OpenGL selection and other build
-details.
+The D3D executables are only produced for a Windows target, and the Metal and
+Vulkan players only on their platforms.
+
+See [INSTALL.md](../INSTALL.md) for SDL, OpenGL, Vulkan, Metal, and D3D
+selection and other build details.
