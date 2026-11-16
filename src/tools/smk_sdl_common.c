@@ -329,7 +329,7 @@ smk_sdl_run(struct smk_sdl_player *p, smk s,
 			if (pr > 0) {
 				/* Recoverable: retry the same frame shortly. */
 				redraw = 1;
-				SDL_Delay(1);
+				SDL_Delay(10);
 				continue;
 			}
 			redraw = 0;

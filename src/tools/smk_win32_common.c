@@ -420,7 +420,7 @@ smk_win32_play(smk s, const struct smk_player_options *opt,
 			}
 			if (pr > 0) {
 				state.redraw = 1;
-				Sleep(1);
+				Sleep(10);
 				continue;
 			}
 			state.redraw = 0;

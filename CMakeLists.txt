@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 project(libsmacker VERSION 1.2.0 LANGUAGES C)
 
-if(APPLE)
-  enable_language(OBJC)
-endif()
-
 # Default to an optimized build with symbols for single-config generators.
 # Multi-config generators choose the configuration at build time instead.
 get_property(isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -25,6 +21,10 @@ option(SMACKER_BUILD_D3D_PLAYERS "Build the Windows D3D players" ON)
 set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
   "SDL version for smk_sdl_player: AUTO, 2 or 3")
 set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
+
+if(APPLE AND SMACKER_BUILD_TOOLS AND SMACKER_BUILD_METAL_PLAYER)
+  enable_language(OBJC)
+endif()
 
 if(NOT SMACKER_BUILD_STATIC AND NOT SMACKER_BUILD_SHARED)
   message(FATAL_ERROR

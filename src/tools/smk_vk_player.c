@@ -196,23 +196,42 @@ create_swapchain(struct vk_state *st, int drawable_w, int drawable_h)
 	VK_FAIL(vkGetPhysicalDeviceSurfaceFormatsKHR(st->physical, st->surface,
 		&format_count, formats), "vkGetPhysicalDeviceSurfaceFormatsKHR");
 
-	st->format = VK_FORMAT_UNDEFINED;
-	for (i = 0; i < format_count; i++) {
-		if (formats[i].colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
-			continue;
-		if (formats[i].format == VK_FORMAT_B8G8R8A8_UNORM) {
-			st->format = VK_FORMAT_B8G8R8A8_UNORM;
-			break;
+	{
+		VkFormat chosen = VK_FORMAT_UNDEFINED;
+
+		/* Keep the format across recreations so the pipeline stays
+		 * compatible with the recreated render pass. */
+		if (st->format != VK_FORMAT_UNDEFINED) {
+			for (i = 0; i < format_count; i++) {
+				if (formats[i].format == st->format) {
+					chosen = st->format;
+					break;
+				}
+			}
 		}
-		if (formats[i].format == VK_FORMAT_R8G8B8A8_UNORM &&
-			st->format == VK_FORMAT_UNDEFINED)
-			st->format = VK_FORMAT_R8G8B8A8_UNORM;
-	}
-	free(formats);
-	if (st->format == VK_FORMAT_UNDEFINED) {
-		fputs("Vulkan surface offers no UNORM swapchain format\n",
-			stderr);
-		return -1;
+		if (chosen == VK_FORMAT_UNDEFINED) {
+			for (i = 0; i < format_count; i++) {
+				if (formats[i].colorSpace !=
+					VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+					continue;
+				if (formats[i].format ==
+					VK_FORMAT_B8G8R8A8_UNORM) {
+					chosen = VK_FORMAT_B8G8R8A8_UNORM;
+					break;
+				}
+				if (formats[i].format ==
+					VK_FORMAT_R8G8B8A8_UNORM &&
+					chosen == VK_FORMAT_UNDEFINED)
+					chosen = VK_FORMAT_R8G8B8A8_UNORM;
+			}
+		}
+		free(formats);
+		if (chosen == VK_FORMAT_UNDEFINED) {
+			fputs("Vulkan surface offers no UNORM swapchain format\n",
+				stderr);
+			return -1;
+		}
+		st->format = chosen;
 	}
 
 	if (caps.currentExtent.width != UINT32_MAX) {
@@ -230,6 +249,10 @@ create_swapchain(struct vk_state *st, int drawable_w, int drawable_h)
 		extent.height = extent.height > caps.maxImageExtent.height ?
 			caps.maxImageExtent.height : extent.height;
 	}
+	if (extent.width < 1)
+		extent.width = 1;
+	if (extent.height < 1)
+		extent.height = 1;
 
 	count = caps.minImageCount + 1;
 	if (caps.maxImageCount > 0 && count > caps.maxImageCount)
@@ -558,13 +581,20 @@ create_pipeline(struct vk_state *st)
 	return 0;
 }
 
+/* 4-byte aligned palette slot in the staging buffer. */
+static VkDeviceSize
+palette_offset(const struct vk_state *st)
+{
+	return (((VkDeviceSize) st->w * st->h) + 3) & ~(VkDeviceSize) 3;
+}
+
 static int
 create_staging(struct vk_state *st)
 {
 	VkBufferCreateInfo buffer_info;
 	VkMemoryRequirements req;
 	VkMemoryAllocateInfo alloc;
-	VkDeviceSize size = (VkDeviceSize) st->w * st->h + 256 * 4;
+	VkDeviceSize size = palette_offset(st) + 256 * 4;
 
 	memset(&buffer_info, 0, sizeof(buffer_info));
 	buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1029,8 +1059,7 @@ vk_present(void *ctx, const unsigned char *frame,
 	int palette_dirty;
 	int x, y, vw, vh;
 	unsigned char *base = st->staging_ptr;
-	unsigned char *palette_slot =
-		base + (size_t) st->w * st->h;
+	unsigned char *palette_slot = base + palette_offset(st);
 
 	if (drawable_w <= 0 || drawable_h <= 0)
 		return 1;
@@ -1115,7 +1144,7 @@ vk_present(void *ctx, const unsigned char *frame,
 			st->palette_layout,
 			VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 		memset(&copy, 0, sizeof(copy));
-		copy.bufferOffset = (VkDeviceSize) st->w * st->h;
+		copy.bufferOffset = palette_offset(st);
 		copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		copy.imageSubresource.layerCount = 1;
 		copy.imageExtent.width = 256;

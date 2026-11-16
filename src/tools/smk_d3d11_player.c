@@ -177,8 +177,11 @@ d3d11_init(void *ctx, HWND hwnd, unsigned long w, unsigned long h)
 	hr = ID3D11Device_CreateVertexShader(st->device,
 		ID3D10Blob_GetBufferPointer(vs_code),
 		ID3D10Blob_GetBufferSize(vs_code), NULL, &st->vs);
-	if (FAILED(hr))
+	if (FAILED(hr)) {
+		ID3D10Blob_Release(vs_code);
+		ID3D10Blob_Release(ps_code);
 		return -1;
+	}
 	hr = ID3D11Device_CreatePixelShader(st->device,
 		ID3D10Blob_GetBufferPointer(ps_code),
 		ID3D10Blob_GetBufferSize(ps_code), NULL, &st->ps);

@@ -319,13 +319,8 @@ d3d9_present(void *ctx, const unsigned char *frame,
 		return recover;
 
 	if (viewport->right <= viewport->left ||
-		viewport->bottom <= viewport->top) {
-		hr = IDirect3DDevice9_Present(st->device, NULL, NULL, NULL, NULL);
-		if (hr == D3DERR_DEVICELOST) {
-			return 1;
-		}
-		return FAILED(hr) ? -1 : 0;
-	}
+		viewport->bottom <= viewport->top)
+		return 1;
 
 	uploaded = upload_frame(st, frame);
 	if (uploaded != 0)

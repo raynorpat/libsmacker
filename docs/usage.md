@@ -578,7 +578,8 @@ device first so old audio does not play after the jump.
 - **Y-scale flags are hints only.** `smk_info_video` reports them, but the
   decoder never scales or deinterlaces the image.
 - **The playback examples are not hardened.** `driver`, `smk2avi`,
-  `smk_sdl_player`, and `smk_gl_player` demonstrate the API but do not
+  `smk_sdl_player`, `smk_gl_player`, `smk_vk_player`, `smk_metal_player`,
+  `smk_d3d11_player`, and `smk_d3d9_player` demonstrate the API but do not
   validate untrusted input.
 
 ## Example programs

@@ -159,6 +159,7 @@ metal_init(struct metal_state *st, SDL_Window *window, unsigned long w,
 		texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
 		width:w height:h mipmapped:NO];
 	desc.usage = MTLTextureUsageShaderRead;
+	desc.storageMode = MTLStorageModeShared;
 	st->frame_tex = [st->device newTextureWithDescriptor:desc];
 	if (st->frame_tex == nil) {
 		fputs("Failed to create Metal frame texture\n", stderr);
@@ -169,6 +170,7 @@ metal_init(struct metal_state *st, SDL_Window *window, unsigned long w,
 		texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
 		width:256 height:1 mipmapped:NO];
 	desc.usage = MTLTextureUsageShaderRead;
+	desc.storageMode = MTLStorageModeShared;
 	st->palette_tex = [st->device newTextureWithDescriptor:desc];
 	if (st->palette_tex == nil) {
 		fputs("Failed to create Metal palette texture\n", stderr);
