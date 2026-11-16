@@ -20,6 +20,7 @@ option(SMACKER_BUILD_TOOLS "Build the example programs" OFF)
 option(SMACKER_BUILD_TESTS "Build the encoder test suite" OFF)
 option(SMACKER_BUILD_GL_PLAYER "Build the OpenGL smk_gl_player example" ON)
 option(SMACKER_BUILD_METAL_PLAYER "Build the Metal smk_metal_player example" ON)
+option(SMACKER_BUILD_VK_PLAYER "Build the Vulkan smk_vk_player example" ON)
 set(SMACKER_SDL_VERSION "AUTO" CACHE STRING
   "SDL version for smk_sdl_player: AUTO, 2 or 3")
 set_property(CACHE SMACKER_SDL_VERSION PROPERTY STRINGS AUTO 2 3)
@@ -230,6 +231,63 @@ if(SMACKER_BUILD_TOOLS)
           ${SMACKER_FOUNDATION_FRAMEWORK})
         message(STATUS
           "smk_metal_player: linking smacker_static, ${SMACKER_SDL_TARGET}, and Metal")
+      endif()
+    endif()
+  endif()
+
+  # Vulkan player: SDL window/surface/audio, GLSL compiled to SPIR-V at build.
+  if(SMACKER_BUILD_VK_PLAYER AND NOT WIN32)
+    if(NOT SMACKER_BUILD_STATIC)
+      message(WARNING
+        "smk_vk_player requires SMACKER_BUILD_STATIC=ON; skipping it.")
+    elseif(SMACKER_SDL_TARGET STREQUAL "")
+      message(WARNING "SDL2/SDL3 not found; skipping smk_vk_player.")
+    else()
+      find_package(Vulkan QUIET)
+      find_program(SMACKER_GLSLC glslc)
+      if(NOT Vulkan_FOUND)
+        message(WARNING "Vulkan not found; skipping smk_vk_player.")
+      elseif(NOT SMACKER_GLSLC)
+        message(WARNING "glslc not found; skipping smk_vk_player.")
+      else()
+        set(SMACKER_VK_GEN_DIR ${CMAKE_CURRENT_BINARY_DIR}/smk_vk_shaders)
+        file(MAKE_DIRECTORY ${SMACKER_VK_GEN_DIR})
+        add_custom_command(
+          OUTPUT
+            ${SMACKER_VK_GEN_DIR}/smk_vk_vert_spv.inc
+            ${SMACKER_VK_GEN_DIR}/smk_vk_frag_spv.inc
+          COMMAND ${SMACKER_GLSLC} --target-env=vulkan1.1 -mfmt=c
+            -o ${SMACKER_VK_GEN_DIR}/smk_vk_vert_spv.inc
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/shaders/smk_vk.vert
+          COMMAND ${SMACKER_GLSLC} --target-env=vulkan1.1 -mfmt=c
+            -o ${SMACKER_VK_GEN_DIR}/smk_vk_frag_spv.inc
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/shaders/smk_vk.frag
+          DEPENDS
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/shaders/smk_vk.vert
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/tools/shaders/smk_vk.frag
+          VERBATIM)
+        add_custom_target(smk_vk_shaders
+          DEPENDS
+            ${SMACKER_VK_GEN_DIR}/smk_vk_vert_spv.inc
+            ${SMACKER_VK_GEN_DIR}/smk_vk_frag_spv.inc)
+        add_executable(smk_vk_player
+          src/tools/smk_vk_player.c
+          src/tools/smk_vk_shaders.c
+          src/tools/smk_sdl_common.c
+          ${SMACKER_PLAYER_COMMON_SOURCES})
+        add_dependencies(smk_vk_player smk_vk_shaders)
+        smacker_set_compile_settings(smk_vk_player)
+        target_include_directories(smk_vk_player PRIVATE
+          ${SMACKER_VK_GEN_DIR})
+        if(SMACKER_USE_SDL3)
+          target_compile_definitions(smk_vk_player PRIVATE SMK_USE_SDL3=1)
+        elseif(TARGET SDL2::SDL2main)
+          target_link_libraries(smk_vk_player PRIVATE SDL2::SDL2main)
+        endif()
+        target_link_libraries(smk_vk_player PRIVATE
+          smacker_static ${SMACKER_SDL_TARGET} Vulkan::Vulkan)
+        message(STATUS
+          "smk_vk_player: linking smacker_static, ${SMACKER_SDL_TARGET}, and Vulkan")
       endif()
     endif()
   endif()
