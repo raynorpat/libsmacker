@@ -4,6 +4,9 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_dpcm_valid_stream_decodes(void);
+void test_decoder_dpcm_truncated_data_yields_no_audio(void);
+void test_decoder_dpcm_broken_tree_yields_no_audio(void);
 void test_decoder_dpcm_unpacked_size_past_buffer(void);
 void test_decoder_pcm_larger_than_declared_buffer(void);
 void test_decoder_palette_length_past_frame(void);
@@ -229,6 +232,12 @@ static const smk_test_case tests[] = {
       test_decoder_pcm_larger_than_declared_buffer },
     { "decoder_dpcm_unpacked_size_past_buffer",
       test_decoder_dpcm_unpacked_size_past_buffer },
+    { "decoder_dpcm_broken_tree_yields_no_audio",
+      test_decoder_dpcm_broken_tree_yields_no_audio },
+    { "decoder_dpcm_truncated_data_yields_no_audio",
+      test_decoder_dpcm_truncated_data_yields_no_audio },
+    { "decoder_dpcm_valid_stream_decodes",
+      test_decoder_dpcm_valid_stream_decodes },
     { NULL, NULL }
 };
 

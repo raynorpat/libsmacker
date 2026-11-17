@@ -237,3 +237,112 @@ void test_decoder_dpcm_unpacked_size_past_buffer(void)
     }
     free(file);
 }
+
+void test_decoder_dpcm_broken_tree_yields_no_audio(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    size_t audio;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    put_u32(file + OFF_AUDIO_RATE, get_u32(file + OFF_AUDIO_RATE) | 0x80000000u);
+    audio = mal_frame0(file) + 4u * file[mal_frame0(file)];
+    put_u32(file + audio + 4, 8);
+    /* All ones: a tree of nothing but branches, which can never complete. */
+    memset(file + audio + 8, 0xff, 200);
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT(smk_first(s) >= 0);
+        SMK_ASSERT_EQ_INT(smk_get_audio_size(s, 0), 0);
+        smk_close(s);
+    }
+    free(file);
+}
+
+void test_decoder_dpcm_truncated_data_yields_no_audio(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    size_t audio;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    put_u32(file + OFF_AUDIO_RATE, get_u32(file + OFF_AUDIO_RATE) | 0x80000000u);
+    audio = mal_frame0(file) + 4u * file[mal_frame0(file)];
+    /*
+     * A record of 4 + 4 + 1 bytes: the sizes, then one byte that says "data
+     * present, mono, 8-bit, no tree" and leaves no room for the first sample.
+     */
+    put_u32(file + audio, 9);
+    put_u32(file + audio + 4, 400);
+    file[audio + 8] = 0x01;
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        smk_first(s); /* the video that follows is now misplaced */
+        SMK_ASSERT_EQ_INT(smk_get_audio_size(s, 0), 0);
+        smk_close(s);
+    }
+    free(file);
+}
+
+/* Append the low `count` bits of value, least significant bit first. */
+static void put_bits(uint8_t *buffer, size_t *bit, uint32_t value,
+                     unsigned count)
+{
+    unsigned i;
+
+    for (i = 0; i < count; i++, (*bit)++) {
+        if ((value >> i) & 1u)
+            buffer[*bit >> 3] |= (uint8_t)(1u << (*bit & 7));
+        else
+            buffer[*bit >> 3] &= (uint8_t)~(1u << (*bit & 7));
+    }
+}
+
+void test_decoder_dpcm_valid_stream_decodes(void)
+{
+    static const uint8_t expected[5] = { 0x10, 0x11, 0x12, 0x11, 0x12 };
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    size_t audio;
+    size_t bit = 0;
+    uint8_t *data;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    put_u32(file + OFF_AUDIO_RATE, get_u32(file + OFF_AUDIO_RATE) | 0x80000000u);
+    audio = mal_frame0(file) + 4u * file[mal_frame0(file)];
+    put_u32(file + audio + 4, sizeof(expected));
+    data = file + audio + 8;
+    put_bits(data, &bit, 1, 1);    /* data present */
+    put_bits(data, &bit, 0, 1);    /* mono */
+    put_bits(data, &bit, 0, 1);    /* 8-bit */
+    put_bits(data, &bit, 1, 1);    /* tree present */
+    put_bits(data, &bit, 1, 1);    /* branch */
+    put_bits(data, &bit, 0, 1);    /* leaf: bit 0 means +1 */
+    put_bits(data, &bit, 0x01, 8);
+    put_bits(data, &bit, 0, 1);    /* leaf: bit 1 means -1 */
+    put_bits(data, &bit, 0xff, 8);
+    put_bits(data, &bit, 0, 1);    /* end of tree */
+    put_bits(data, &bit, 0x10, 8); /* initial sample */
+    put_bits(data, &bit, 0x4, 4);  /* +1, +1, -1, +1 */
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT(smk_first(s) >= 0);
+        SMK_ASSERT_EQ_INT(smk_get_audio_size(s, 0), sizeof(expected));
+        if (smk_get_audio_size(s, 0) == sizeof(expected))
+            SMK_ASSERT_MEM_EQ(smk_get_audio(s, 0), expected, sizeof(expected));
+        smk_close(s);
+    }
+    free(file);
+}

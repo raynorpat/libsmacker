@@ -721,7 +721,7 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 	unsigned char * t = s->buffer;
 	smk_bitreader bs;
 	char bit;
-	short unpack, unpack2;
+	int c, value, value2;
 	/* used for audio decoding */
 	smk_huff8 aud_tree[4];
 	/* null check */
@@ -769,8 +769,8 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 		smk_bs_init(&bs, p, size);
 		bit = smk_bs_read_1(&bs);
 
-		if (!bit) {
-			fputs("libsmacker::smk_render_audio - ERROR: initial get_bit returned 0\n", stderr);
+		if (bit != 1) {
+			fputs("libsmacker::smk_render_audio - ERROR: initial get_bit did not return 1\n", stderr);
 			goto error;
 		}
 
@@ -784,76 +784,51 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 		if (s->bitdepth != (bit == 1 ? 16 : 8))
 			fputs("libsmacker::smk_render - ERROR: 8-/16-bit mismatch\n", stderr);
 
-		/* build the trees */
-		smk_huff8_build(&aud_tree[0], &bs);
-		j = 1;
-		k = 1;
-
-		if (s->bitdepth == 16) {
-			smk_huff8_build(&aud_tree[1], &bs);
-			k = 2;
-		}
-
-		if (s->channels == 2) {
-			smk_huff8_build(&aud_tree[2], &bs);
-			j = 2;
-			k = 2;
-
-			if (s->bitdepth == 16) {
-				smk_huff8_build(&aud_tree[3], &bs);
-				k = 4;
+		/* build the trees: low byte, then high byte if 16-bit, per channel */
+		for (c = 0; c < s->channels; c ++) {
+			if (!smk_huff8_build(&aud_tree[c * 2], &bs) ||
+				(s->bitdepth == 16 && !smk_huff8_build(&aud_tree[c * 2 + 1], &bs))) {
+				fputs("libsmacker::smk_render_audio() - ERROR: failed to build audio tree.\n", stderr);
+				goto error;
 			}
 		}
 
-		/* read initial sound level */
-		if (s->channels == 2) {
-			unpack = smk_bs_read_8(&bs);
+		/* read initial sound level: last channel first, high byte first */
+		for (c = s->channels; c -- > 0;) {
+			if ((value = smk_bs_read_8(&bs)) < 0)
+				goto error;
 
 			if (s->bitdepth == 16) {
-				((short *)t)[1] = smk_bs_read_8(&bs);
-				((short *)t)[1] |= (unpack << 8);
+				if ((value2 = smk_bs_read_8(&bs)) < 0)
+					goto error;
+
+				((short *)t)[c] = (short)(unsigned short)((value << 8) | value2);
 			} else
-				((unsigned char *)t)[1] = (unsigned char)unpack;
+				((unsigned char *)t)[c] = (unsigned char)value;
 		}
-
-		unpack = smk_bs_read_8(&bs);
-
-		if (s->bitdepth == 16) {
-			((short *)t)[0] = smk_bs_read_8(&bs);
-			((short *)t)[0] |= (unpack << 8);
-		} else
-			((unsigned char *)t)[0] = (unsigned char)unpack;
 
 		/* All set: let's read some DATA! */
+		j = s->channels;
+		k = (unsigned int)group;
+
 		/* Each pass writes one whole sample frame. */
 		while (k + group <= unpacked) {
-			if (s->bitdepth == 8) {
-				unpack = smk_huff8_lookup(&aud_tree[0], &bs);
-				((unsigned char *)t)[j] = (char)unpack + ((unsigned char *)t)[j - s->channels];
+			for (c = 0; c < s->channels; c ++) {
+				if ((value = smk_huff8_lookup(&aud_tree[c * 2], &bs)) < 0)
+					goto error;
+
+				if (s->bitdepth == 16) {
+					if ((value2 = smk_huff8_lookup(&aud_tree[c * 2 + 1], &bs)) < 0)
+						goto error;
+
+					((short *)t)[j] = (short)(unsigned short)((value | (value2 << 8)) + ((short *)t)[j - s->channels]);
+				} else
+					((unsigned char *)t)[j] = (unsigned char)(value + ((unsigned char *)t)[j - s->channels]);
+
 				j ++;
-				k++;
-			} else {
-				unpack = smk_huff8_lookup(&aud_tree[0], &bs);
-				unpack2 = smk_huff8_lookup(&aud_tree[1], &bs);
-				((short *)t)[j] = (short)(unpack | (unpack2 << 8)) + ((short *)t)[j - s->channels];
-				j ++;
-				k += 2;
 			}
 
-			if (s->channels == 2) {
-				if (s->bitdepth == 8) {
-					unpack = smk_huff8_lookup(&aud_tree[2], &bs);
-					((unsigned char *)t)[j] = (char)unpack + ((unsigned char *)t)[j - 2];
-					j ++;
-					k++;
-				} else {
-					unpack = smk_huff8_lookup(&aud_tree[2], &bs);
-					unpack2 = smk_huff8_lookup(&aud_tree[3], &bs);
-					((short *)t)[j] = (short)(unpack | (unpack2 << 8)) + ((short *)t)[j - 2];
-					j ++;
-					k += 2;
-				}
-			}
+			k += (unsigned int)group;
 		}
 
 		s->buffer_size = k;
