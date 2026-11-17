@@ -449,3 +449,26 @@ void test_decoder_zero_frames_fails_open(void)
         smk_close(s);
     free(file);
 }
+
+void test_decoder_rejects_out_of_range_arguments(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT(smk_first(s) >= 0);
+        SMK_ASSERT_EQ_INT(smk_enable_audio(s, 7, 1), -1);
+        SMK_ASSERT(smk_get_audio(s, 7) == NULL);
+        SMK_ASSERT_EQ_INT(smk_get_audio_size(s, 7), 0);
+        SMK_ASSERT_EQ_INT(smk_seek_keyframe(s, MAL_FRAMES), -1);
+        SMK_ASSERT_EQ_INT(smk_seek_keyframe(s, MAL_FRAMES - 1), 0);
+        smk_close(s);
+    }
+    free(file);
+}

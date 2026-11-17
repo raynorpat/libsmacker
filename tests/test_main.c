@@ -4,6 +4,7 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_rejects_out_of_range_arguments(void);
 void test_decoder_zero_frames_fails_open(void);
 void test_decoder_deep_tree_fails_open(void);
 void test_decoder_dimensions_not_multiple_of_four(void);
@@ -247,6 +248,8 @@ static const smk_test_case tests[] = {
       test_decoder_deep_tree_fails_open },
     { "decoder_zero_frames_fails_open",
       test_decoder_zero_frames_fails_open },
+    { "decoder_rejects_out_of_range_arguments",
+      test_decoder_rejects_out_of_range_arguments },
     { NULL, NULL }
 };
 

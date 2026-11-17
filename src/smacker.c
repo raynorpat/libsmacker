@@ -689,6 +689,11 @@ char smk_enable_audio(smk object, const unsigned char track, const unsigned char
 		return -1;
 	}
 
+	if (track > 6) {
+		fprintf(stderr, "libsmacker::smk_enable_audio() - ERROR: track %u out of range\n", track);
+		return -1;
+	}
+
 	object->audio[track].enable = enable;
 	return 0;
 }
@@ -721,6 +726,11 @@ const unsigned char * smk_get_audio(const smk object, const unsigned char t)
 		return NULL;
 	}
 
+	if (t > 6) {
+		fprintf(stderr, "libsmacker::smk_get_audio() - ERROR: track %u out of range\n", t);
+		return NULL;
+	}
+
 	return object->audio[t].buffer;
 }
 unsigned long smk_get_audio_size(const smk object, const unsigned char t)
@@ -728,6 +738,11 @@ unsigned long smk_get_audio_size(const smk object, const unsigned char t)
 	/* null check */
 	if (object == NULL) {
 		fputs("libsmacker::smk_get_audio_size() - ERROR: smk is NULL\n", stderr);
+		return 0;
+	}
+
+	if (t > 6) {
+		fprintf(stderr, "libsmacker::smk_get_audio_size() - ERROR: track %u out of range\n", t);
 		return 0;
 	}
 
@@ -1081,6 +1096,11 @@ char smk_seek_keyframe(smk s, unsigned long f)
 	/* null check */
 	if (s == NULL) {
 		fputs("libsmacker::smk_seek_keyframe() - ERROR: smk is NULL\n", stderr);
+		return -1;
+	}
+
+	if (f >= s->f + s->ring_frame) {
+		fprintf(stderr, "libsmacker::smk_seek_keyframe(s,%lu) - ERROR: frame out of range\n", f);
 		return -1;
 	}
 
