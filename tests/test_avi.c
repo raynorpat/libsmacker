@@ -179,12 +179,11 @@ static void avi_video_strl(abuf *b, unsigned width, unsigned height,
     ab_chunk_end(b, list);
 }
 
-static void avi_audio_strl(abuf *b, unsigned channels, unsigned rate,
-                           unsigned bits)
+static void avi_audio_strl_align(abuf *b, unsigned channels, unsigned rate,
+                                 unsigned bits, unsigned block)
 {
     size_t list = ab_container_begin(b, "LIST", "strl");
     size_t strh = ab_chunk_begin(b, "strh");
-    unsigned block = channels * (bits / 8);
 
     ab_raw(b, "auds", 4);
     ab_u32(b, 0);
@@ -214,6 +213,12 @@ static void avi_audio_strl(abuf *b, unsigned channels, unsigned rate,
         ab_chunk_end(b, strf);
     }
     ab_chunk_end(b, list);
+}
+
+static void avi_audio_strl(abuf *b, unsigned channels, unsigned rate,
+                           unsigned bits)
+{
+    avi_audio_strl_align(b, channels, rate, bits, channels * (bits / 8));
 }
 
 static void avi_video_chunk(abuf *b, unsigned stream, int compressed,
@@ -623,6 +628,51 @@ void test_avi_rejects_unsupported_codec(void)
                       SMK_ENC_ERR_INPUT);
     SMK_ASSERT(err[0] != '\0');
 
+    remove(path);
+    free(path);
+    free(b.data);
+}
+
+void test_avi_rejects_mismatched_block_align(void)
+{
+    abuf b;
+    size_t riff;
+    char *path;
+    smk_enc_options options;
+    smk_enc_source source;
+    char err[256];
+    uint8_t rgb[48];
+    static const int16_t mono[2] = { 11, 22 };
+
+    memset(&b, 0, sizeof(b));
+    avi_begin(&b, &riff);
+    {
+        size_t hdrl = ab_container_begin(&b, "LIST", "hdrl");
+        avi_avih(&b, 50000, 1, 2, 4, 4);
+        avi_video_strl(&b, 4, 4, 24, 0, "DIB ", 50000, 1000000);
+        /* 16-bit mono is two bytes per sample frame, not 64. */
+        avi_audio_strl_align(&b, 1, 8000, 16, 64);
+        ab_chunk_end(&b, hdrl);
+    }
+    fill_pattern(rgb, 4, 4);
+    {
+        size_t movi = ab_container_begin(&b, "LIST", "movi");
+        avi_video_chunk(&b, 0, 0, rgb, 4, 4, 24, 0);
+        avi_audio_chunk(&b, 1, mono, sizeof(mono));
+        ab_chunk_end(&b, movi);
+    }
+    ab_chunk_end(&b, riff);
+
+    path = write_temp_avi("align.avi", &b);
+    SMK_ASSERT(path != NULL);
+    default_options(&options);
+    memset(&source, 0, sizeof(source));
+    memset(err, 0, sizeof(err));
+    SMK_ASSERT_EQ_INT(smk_avi_open(path, &options, &source, err, sizeof(err)),
+                      SMK_ENC_ERR_INPUT);
+    SMK_ASSERT(strstr(err, "block align") != NULL);
+
+    smk_avi_close(&source);
     remove(path);
     free(path);
     free(b.data);

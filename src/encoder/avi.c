@@ -471,10 +471,15 @@ static smk_enc_status finish_header(avi_header *header,
         track->channels = stream->channels;
         track->rate = stream->audio_rate;
         track->bits = stream->bits;
+        /*
+         * The encoder sizes its audio buffers as channels * bytes per sample,
+         * so PCM whose declared block align disagrees cannot be read safely.
+         */
         track->block_align = stream->channels * (stream->bits / 8);
         if (stream->block_align != 0 &&
             stream->block_align != track->block_align)
-            track->block_align = stream->block_align;
+            return fail(err, errlen,
+                        "AVI audio block align does not match its format");
         header->stream_to_track[i] = (int)state->track_count;
         state->track_count++;
 
