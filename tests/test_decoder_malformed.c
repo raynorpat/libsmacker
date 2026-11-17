@@ -1,0 +1,126 @@
+/*
+ * The decoder must reject or survive damaged files. Each test encodes a small
+ * valid file, damages one field, and decodes it. Run the suite under
+ * AddressSanitizer to catch out-of-bounds access as well as wrong results.
+ */
+#include "test.h"
+#include "test_util.h"
+
+#include "smacker.h"
+#include "smk_encoder.h"
+
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define MAL_WIDTH 8u
+#define MAL_HEIGHT 8u
+#define MAL_FRAMES 3u
+
+/* Header field offsets, see docs/smacker.md. */
+#define OFF_WIDTH 4
+#define OFF_HEIGHT 8
+#define OFF_FRAMES 12
+#define OFF_AUDIO_SIZE 24
+#define OFF_TREES_SIZE 52
+#define OFF_TREE_SIZE 56
+#define OFF_AUDIO_RATE 72
+#define HEADER_SIZE 104
+
+static int mal_read_frame(void *user, unsigned index, uint8_t *rgb)
+{
+    unsigned i;
+
+    (void)user;
+    for (i = 0; i < MAL_WIDTH * MAL_HEIGHT; i++) {
+        rgb[i * 3] = (uint8_t)((i * 4 + index * 32) & 0xfc);
+        rgb[i * 3 + 1] = (uint8_t)((i / MAL_WIDTH) * 32);
+        rgb[i * 3 + 2] = (uint8_t)(index * 64);
+    }
+    return 0;
+}
+
+static size_t mal_read_audio(void *user, unsigned track, size_t start,
+                             size_t count, void *dst)
+{
+    size_t i;
+
+    (void)user;
+    (void)track;
+    for (i = 0; i < count; i++)
+        ((uint8_t *)dst)[i] = (uint8_t)(start + i);
+    return count;
+}
+
+static uint32_t get_u32(const uint8_t *p)
+{
+    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) |
+           ((uint32_t)p[3] << 24);
+}
+
+static void put_u32(uint8_t *p, uint32_t value)
+{
+    p[0] = (uint8_t)value;
+    p[1] = (uint8_t)(value >> 8);
+    p[2] = (uint8_t)(value >> 16);
+    p[3] = (uint8_t)(value >> 24);
+}
+
+/* Encode a valid 8x8, three-frame file with one 8-bit mono PCM track. */
+static uint8_t *mal_make_file(size_t *size)
+{
+    smk_enc_source source;
+    smk_enc_options options;
+    char err[256];
+    char *dir = test_tempdir();
+    char path[1024];
+    void *data = NULL;
+
+    if (dir == NULL)
+        return NULL;
+    snprintf(path, sizeof(path), "%s/malformed.smk", dir);
+    test_tempdir_free(dir);
+
+    memset(&source, 0, sizeof(source));
+    source.width = MAL_WIDTH;
+    source.height = MAL_HEIGHT;
+    source.frame_count = MAL_FRAMES;
+    source.fps_num = 10;
+    source.fps_den = 1;
+    source.audio_track_count = 1;
+    source.audio[0].rate = 8000;
+    source.audio[0].channels = 1;
+    source.audio[0].bits = 8;
+    source.read_frame = mal_read_frame;
+    source.read_audio = mal_read_audio;
+    smk_enc_options_default(&options);
+
+    if (smk_enc_encode(&source, &options, path, err, sizeof(err)) !=
+        SMK_ENC_OK)
+        return NULL;
+    if (test_read_file(path, &data, size) != 0)
+        return NULL;
+    remove(path);
+    return (uint8_t *)data;
+}
+
+/* Offset of frame 0's chunk: header, size and type tables, then the trees. */
+static size_t mal_frame0(const uint8_t *file)
+{
+    return HEADER_SIZE + 5u * MAL_FRAMES + get_u32(file + OFF_TREES_SIZE);
+}
+
+void test_decoder_truncated_file_fails_open(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    SMK_ASSERT(smk_open_memory(file, 10) == NULL);
+    SMK_ASSERT(smk_open_memory(file, HEADER_SIZE + 2) == NULL);
+    SMK_ASSERT(smk_open_memory(file, (unsigned long)(size - 1)) == NULL);
+    free(file);
+}

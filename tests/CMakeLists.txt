@@ -20,6 +20,7 @@ add_executable(smk_tests
   test_roundtrip_palette.c
   test_verify.c
   test_roundtrip_avi.c
+  test_decoder_malformed.c
   ${SMACKER_ENCODER_SOURCES}
   ${SMACKER_TOOL_INPUT_SOURCES}
   ${SMACKER_PLAYER_COMMON_SOURCES}

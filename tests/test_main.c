@@ -4,6 +4,7 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_truncated_file_fails_open(void);
 void test_encode_null_source(void);
 void test_encode_null_output(void);
 void test_encode_missing_input(void);
@@ -214,6 +215,8 @@ static const smk_test_case tests[] = {
     { "parse_options_default_limit", test_parse_options_default_limit },
     { "parse_options_rejects_extra_path", test_parse_options_rejects_extra_path },
     { "parse_options_frames_missing", test_parse_options_frames_missing },
+    { "decoder_truncated_file_fails_open",
+      test_decoder_truncated_file_fails_open },
     { NULL, NULL }
 };
 

@@ -6,7 +6,6 @@
 
 	smk_malloc.h
 		"Safe" implementations of malloc and free.
-		Verbose implementation of assert.
 */
 
 #ifndef SMK_MALLOC_H
@@ -24,32 +23,30 @@
 #include <string.h>
 
 /**
-	Safe free: attempts to prevent double-free by setting pointer to NULL.
-		Optionally warns on attempts to free a NULL pointer.
+	Safe free: prevents double-free by setting the pointer to NULL.
+		Freeing a NULL pointer is allowed, so partially built objects can be
+		torn down on an error path.
 */
 #define smk_free(p) \
 { \
-	assert (p); \
 	free(p); \
 	p = NULL; \
 }
 
 /**
-	Safe malloc: exits if calloc() returns NULL.
-		Also initializes blocks to 0.
-	Optionally warns on attempts to malloc over an existing pointer.
-	Ideally, one should not exit() in a library. However, if you cannot
-		calloc(), you probably have bigger problems.
+	Safe malloc: allocates a zeroed block of at least one byte.
+		Sizes come from file headers, so a failed allocation is an ordinary
+		error: report it and jump to the caller's `error` label.
 */
 #define smk_malloc(p, x) \
 { \
 	assert (p == NULL); \
-	p = calloc(1, x); \
+	p = calloc(1, (x) != 0 ? (x) : 1); \
 	if (!p) \
 	{ \
 		fprintf(stderr, "libsmacker::smk_malloc(" #p ", %lu) - ERROR: calloc() returned NULL (file: %s, line: %lu)\n\tReason: [%d] %s\n", \
 			(unsigned long) (x), __FILE__, (unsigned long)__LINE__, errno, strerror(errno)); \
-		exit(EXIT_FAILURE); \
+		goto error; \
 	} \
 }
 
