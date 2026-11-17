@@ -19,6 +19,7 @@
 #include "smk_malloc.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -99,6 +100,14 @@ struct smk_t {
 		unsigned char palette[256][3];
 		/* Last-unpacked frame */
 		unsigned char * frame;
+
+		/* The decoder paints whole 4x4 blocks. When w or h is not a
+			multiple of 4, frames are decoded into `blocks`, which is
+			block_w * block_h bytes, and the visible part is copied to
+			`frame`. Otherwise `blocks` is NULL and `frame` is used directly. */
+		unsigned long	block_w;
+		unsigned long	block_h;
+		unsigned char * blocks;
 	} video;
 
 	/* audio structure */
@@ -361,8 +370,26 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 
 	/* clean up */
 	smk_free(hufftree_chunk);
-	/* Go ahead and malloc storage for the video frame */
-	smk_malloc(s->video.frame, s->video.w * s->video.h);
+	/* Go ahead and malloc storage for the video frame.
+		Round the size up to whole blocks, and refuse sizes that overflow. */
+	if (s->video.w > UINT_MAX - 3 || s->video.h > UINT_MAX - 3) {
+		fprintf(stderr, "libsmacker::smk_open_generic - ERROR: frame size %lux%lu is too large\n", s->video.w, s->video.h);
+		goto error;
+	}
+
+	s->video.block_w = (s->video.w + 3) & ~3UL;
+	s->video.block_h = (s->video.h + 3) & ~3UL;
+
+	if (s->video.block_h != 0 && s->video.block_w > ((size_t) -1) / s->video.block_h) {
+		fprintf(stderr, "libsmacker::smk_open_generic - ERROR: frame size %lux%lu is too large\n", s->video.w, s->video.h);
+		goto error;
+	}
+
+	smk_malloc(s->video.frame, (size_t)s->video.w * s->video.h);
+
+	if (s->video.block_w != s->video.w || s->video.block_h != s->video.h)
+		smk_malloc(s->video.blocks, (size_t)s->video.block_w * s->video.block_h);
+
 	/* final processing: depending on ProcessMode, handle what to do with rest of file data */
 	s->mode = process_mode;
 
@@ -486,6 +513,7 @@ void smk_close(smk s)
 		smk_huff16_free(&s->video.tree[u]);
 
 	smk_free(s->video.frame);
+	smk_free(s->video.blocks);
 
 	/* free audio sub-components */
 	for (u = 0; u < 7; u++) {
@@ -702,14 +730,28 @@ unsigned long smk_get_audio_size(const smk object, const unsigned char t)
 static char smk_render_video(struct smk_video_t * s, unsigned char * p, unsigned int size)
 {
 	smk_bitreader bs;
+	unsigned long row;
+	char result;
 
 	/* null check */
 	assert(s);
 	assert(p);
 	/* Set up a bitstream for video unpacking */
 	smk_bs_init(&bs, p, size);
-	return smk_video_decode(&bs, s->tree, s->frame, (unsigned)s->w,
-	                        (unsigned)s->h, (char)s->v);
+
+	if (s->blocks == NULL)
+		return smk_video_decode(&bs, s->tree, s->frame, (unsigned)s->w,
+		                        (unsigned)s->h, (char)s->v);
+
+	/* Decode whole blocks, then copy out the visible rows. A failed frame
+		still shows whatever blocks were decoded, as in the direct case. */
+	result = smk_video_decode(&bs, s->tree, s->blocks, (unsigned)s->block_w,
+	                          (unsigned)s->block_h, (char)s->v);
+
+	for (row = 0; row < s->h; row ++)
+		memcpy(s->frame + row * s->w, s->blocks + row * s->block_w, s->w);
+
+	return result;
 }
 
 /* Decompress audio track i. */

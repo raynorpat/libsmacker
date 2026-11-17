@@ -346,3 +346,44 @@ void test_decoder_dpcm_valid_stream_decodes(void)
     }
     free(file);
 }
+
+void test_decoder_dimensions_not_multiple_of_four(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    uint8_t reference[MAL_WIDTH * MAL_HEIGHT];
+    unsigned long width = 0;
+    unsigned long height = 0;
+    unsigned y;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s == NULL) {
+        free(file);
+        return;
+    }
+    SMK_ASSERT(smk_first(s) >= 0);
+    memcpy(reference, smk_get_video(s), sizeof(reference));
+    smk_close(s);
+
+    /* Same 2x2 blocks, but only the top-left 6x6 pixels are visible. */
+    put_u32(file + OFF_WIDTH, 6);
+    put_u32(file + OFF_HEIGHT, 6);
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT(smk_first(s) >= 0);
+        smk_info_video(s, &width, &height, NULL);
+        SMK_ASSERT_EQ_INT(width, 6);
+        SMK_ASSERT_EQ_INT(height, 6);
+        for (y = 0; y < 6; y++)
+            SMK_ASSERT_MEM_EQ(smk_get_video(s) + y * 6,
+                              reference + y * MAL_WIDTH, 6);
+        smk_close(s);
+    }
+    free(file);
+}

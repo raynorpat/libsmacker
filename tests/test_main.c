@@ -4,6 +4,7 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_dimensions_not_multiple_of_four(void);
 void test_decoder_dpcm_valid_stream_decodes(void);
 void test_decoder_dpcm_truncated_data_yields_no_audio(void);
 void test_decoder_dpcm_broken_tree_yields_no_audio(void);
@@ -238,6 +239,8 @@ static const smk_test_case tests[] = {
       test_decoder_dpcm_truncated_data_yields_no_audio },
     { "decoder_dpcm_valid_stream_decodes",
       test_decoder_dpcm_valid_stream_decodes },
+    { "decoder_dimensions_not_multiple_of_four",
+      test_decoder_dimensions_not_multiple_of_four },
     { NULL, NULL }
 };
 
