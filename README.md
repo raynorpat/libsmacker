@@ -54,8 +54,10 @@ The source package additionally includes nine example programs:
 - `src/tools/smk_build/` - encodes image directories or AVI files into SMK2,
   with adaptive palettes, delta frames, PCM audio, and optional verification.
 
-Though the libraries are "bulletproofed" the sample apps are not: be cautious
-if you plan to implement in some critical environment.
+The library validates the files it decodes and has regression tests for
+damaged input, but it has not been audited to the standard of a hardened
+parser, and the sample apps are not hardened at all: be cautious if you plan
+to use either on untrusted files in a critical environment.
 
 ## Documentation
 

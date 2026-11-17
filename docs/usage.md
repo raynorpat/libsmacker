@@ -554,27 +554,29 @@ device first so old audio does not play after the jump.
 
 - **Decoding is opt-in.** Forgetting to call `smk_enable_video`/`smk_enable_audio`
   produces zeroed or stale buffers, not an error.
-- **The library is not thread-safe.** `smk_render_palette` uses a file-static
-  scratch palette, and the decoder writes diagnostics to `stderr`. Do not
-  decode on two handles concurrently from different threads. Separate
-  processes are fine; sequential use of separate handles is fine.
+- **Use one handle from one thread at a time.** The decoder keeps
+  no global state, so separate handles can be decoded on separate threads, but
+  one handle must not be used from two threads at once. Diagnostics are
+  written to `stderr` unconditionally and may interleave.
 - **Disk mode performs one `fseek` and one allocation per frame.** This is
   convenient for local files but poor for non-seekable streams. Use memory
   mode for pipes, network streams, or repeated random access. `smk_open_memory`
   and `SMK_MODE_MEMORY` load the entire frame data set into RAM.
-- **Malformed files are only partially validated.** Several internal readers
-  trust header sizes and frame tables. A corrupt file can cause decode errors,
-  very large allocations, or out-of-bounds reads. Do not feed untrusted files to
-  a process that must remain available.
-- **Some argument checks are missing.** `smk_enable_audio` and
-  `smk_seek_keyframe` do not range-check their track/frame arguments. Keep
-  tracks in `0..6` and frames below `frame_count`.
+- **Malformed files fail to open or fail to render.** Record lengths, audio
+  sizes, tree depth, the frame count, and frame dimensions are checked, and a
+  frame that breaks them makes `smk_first`/`smk_next` return an error (a bad
+  audio chunk yields no audio for that frame instead). Allocation failure is
+  reported as a failed open. A header can still request large allocations:
+  the frame tables and the frame buffer are sized from header fields before
+  the rest of the file is read.
+- **Arguments are range-checked.** `smk_enable_audio`, `smk_get_audio`, and
+  `smk_get_audio_size` reject tracks outside `0..6`, and `smk_seek_keyframe`
+  rejects frames past the end.
 - **Bink Audio is not supported.** Tracks flagged as Bink-compressed are opened
   but produce no decoded samples.
-- **Video dimensions are assumed to be multiples of 4.** The decoder paints
-  whole 4x4 blocks. Widths and heights that are not multiples of 4 can decode
-  incorrectly, and a partial final block row can write past the end of the
-  frame buffer.
+- **Video is coded in 4x4 blocks.** When the width or height is not a multiple
+  of 4, the decoder decodes whole blocks internally and returns the top-left
+  `width * height` pixels.
 - **Y-scale flags are hints only.** `smk_info_video` reports them, but the
   decoder never scales or deinterlaces the image.
 - **The playback examples are not hardened.** `driver`, `smk2avi`,
