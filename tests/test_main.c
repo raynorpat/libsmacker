@@ -4,6 +4,7 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_dpcm_unpacked_size_past_buffer(void);
 void test_decoder_pcm_larger_than_declared_buffer(void);
 void test_decoder_palette_length_past_frame(void);
 void test_decoder_audio_chunk_length_past_frame(void);
@@ -226,6 +227,8 @@ static const smk_test_case tests[] = {
       test_decoder_palette_length_past_frame },
     { "decoder_pcm_larger_than_declared_buffer",
       test_decoder_pcm_larger_than_declared_buffer },
+    { "decoder_dpcm_unpacked_size_past_buffer",
+      test_decoder_dpcm_unpacked_size_past_buffer },
     { NULL, NULL }
 };
 

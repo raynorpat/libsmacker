@@ -212,3 +212,28 @@ void test_decoder_pcm_larger_than_declared_buffer(void)
     }
     free(file);
 }
+
+void test_decoder_dpcm_unpacked_size_past_buffer(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    size_t audio;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    /* Reinterpret the PCM track as DPCM claiming 256 MB of output. */
+    put_u32(file + OFF_AUDIO_RATE, get_u32(file + OFF_AUDIO_RATE) | 0x80000000u);
+    audio = mal_frame0(file) + 4u * file[mal_frame0(file)];
+    put_u32(file + audio + 4, 0x10000000u);
+    memset(file + audio + 8, 0x01, 8); /* present bit, then empty trees */
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT(smk_first(s) >= 0);
+        SMK_ASSERT_EQ_INT(smk_get_audio_size(s, 0), 0);
+        smk_close(s);
+    }
+    free(file);
+}

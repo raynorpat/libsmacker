@@ -716,6 +716,8 @@ static char smk_render_video(struct smk_video_t * s, unsigned char * p, unsigned
 static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned long size)
 {
 	unsigned int j, k;
+	/* DPCM: claimed output size, and bytes per sample frame */
+	unsigned long unpacked, group;
 	unsigned char * t = s->buffer;
 	smk_bitreader bs;
 	char bit;
@@ -747,12 +749,21 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 		}
 
 		/* chunk is compressed (huff-compressed dpcm), retrieve unpacked buffer size */
-		s->buffer_size = ((unsigned int) p[3] << 24) |
+		unpacked = ((unsigned int) p[3] << 24) |
 			((unsigned int) p[2] << 16) |
 			((unsigned int) p[1] << 8) |
 			((unsigned int) p[0]);
 		p += 4;
 		size -= 4;
+		/* The output must hold the initial sample frame and fit the buffer
+			sized from the header. */
+		group = (unsigned long)s->channels * (s->bitdepth / 8);
+
+		if (unpacked < group || unpacked > (unsigned long)s->max_buffer) {
+			fprintf(stderr, "libsmacker::smk_render_audio() - ERROR: DPCM unpacked size %lu is outside the usable range %lu..%ld.\n", unpacked, group, s->max_buffer);
+			goto error;
+		}
+
 		/* Compressed audio: must unpack here */
 		/*  Set up a bitstream */
 		smk_bs_init(&bs, p, size);
@@ -814,7 +825,8 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 			((unsigned char *)t)[0] = (unsigned char)unpack;
 
 		/* All set: let's read some DATA! */
-		while (k < s->buffer_size) {
+		/* Each pass writes one whole sample frame. */
+		while (k + group <= unpacked) {
 			if (s->bitdepth == 8) {
 				unpack = smk_huff8_lookup(&aud_tree[0], &bs);
 				((unsigned char *)t)[j] = (char)unpack + ((unsigned char *)t)[j - s->channels];
@@ -843,6 +855,8 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 				}
 			}
 		}
+
+		s->buffer_size = k;
 	}
 
 	return 0;
