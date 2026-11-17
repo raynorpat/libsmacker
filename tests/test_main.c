@@ -4,6 +4,7 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_zero_frames_fails_open(void);
 void test_decoder_deep_tree_fails_open(void);
 void test_decoder_dimensions_not_multiple_of_four(void);
 void test_decoder_dpcm_valid_stream_decodes(void);
@@ -244,6 +245,8 @@ static const smk_test_case tests[] = {
       test_decoder_dimensions_not_multiple_of_four },
     { "decoder_deep_tree_fails_open",
       test_decoder_deep_tree_fails_open },
+    { "decoder_zero_frames_fails_open",
+      test_decoder_zero_frames_fails_open },
     { NULL, NULL }
 };
 

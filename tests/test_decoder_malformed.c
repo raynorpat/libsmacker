@@ -425,3 +425,27 @@ void test_decoder_deep_tree_fails_open(void)
     SMK_ASSERT(smk_open_memory(file, (unsigned long)size) == NULL);
     free(file);
 }
+
+void test_decoder_zero_frames_fails_open(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    size_t trees;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    /*
+     * Claim no frames and drop the frame tables, so the trees still follow
+     * the header and the file is consistent apart from being empty.
+     */
+    trees = get_u32(file + OFF_TREES_SIZE);
+    put_u32(file + OFF_FRAMES, 0);
+    memmove(file + HEADER_SIZE, file + HEADER_SIZE + 5u * MAL_FRAMES, trees);
+    s = smk_open_memory(file, (unsigned long)(HEADER_SIZE + trees));
+    SMK_ASSERT(s == NULL);
+    if (s != NULL)
+        smk_close(s);
+    free(file);
+}

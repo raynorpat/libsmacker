@@ -263,6 +263,13 @@ static smk smk_open_generic(const unsigned char m, union smk_read_t fp, unsigned
 	s->video.w = file_header.width;
 	s->video.h = file_header.height;
 	s->f = file_header.frames;
+
+	/* Every frame-indexed table and the playback calls need at least one
+		frame, and the table sizes below must not overflow. */
+	if (s->f == 0 || (unsigned long long)s->f + 1 > (unsigned long long)(((size_t) -1) / sizeof(unsigned long))) {
+		fprintf(stderr, "libsmacker::smk_open_generic - ERROR: invalid frame count %lu\n", s->f);
+		goto error;
+	}
 	/* frames per second calculation */
 	temp_l = file_header.frame_rate;
 
