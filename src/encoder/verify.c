@@ -98,7 +98,7 @@ static smk_enc_status verify_body(const char *path,
     uint8_t *rgb = NULL;
     uint8_t *indices = NULL;
     uint8_t *expected_audio = NULL;
-    smk_histogram hist;
+    smk_histogram *hist = NULL; /* 1 MB: too large for the stack */
     smk_palette palette;
     smk_palette frame_palette;
     smk_enc_palette_choice choice;
@@ -155,7 +155,6 @@ static smk_enc_status verify_body(const char *path,
     if (fps_den == 0)
         fps_den = 1;
 
-    memset(&hist, 0, sizeof(hist));
     memset(&palette, 0, sizeof(palette));
     memset(&frame_palette, 0, sizeof(frame_palette));
     memset(&choice, 0, sizeof(choice));
@@ -165,7 +164,8 @@ static smk_enc_status verify_body(const char *path,
     rgb = (uint8_t *)malloc(pixels * 3);
     indices = (uint8_t *)malloc(pixels);
     lut = (smk_quant_lut *)malloc(sizeof(*lut));
-    if (rgb == NULL || indices == NULL || lut == NULL) {
+    hist = (smk_histogram *)calloc(1, sizeof(*hist));
+    if (rgb == NULL || indices == NULL || lut == NULL || hist == NULL) {
         status = fail(err, errlen, SMK_ENC_ERR_ENCODE, "out of memory");
         goto cleanup;
     }
@@ -236,7 +236,7 @@ static smk_enc_status verify_body(const char *path,
 
     /* Rebuild the shared palette exactly as the encoder did. */
     if (options->palette != SMK_ENC_PALETTE_FRAME) {
-        smk_histogram_init(&hist);
+        smk_histogram_init(hist);
         for (i = 0; i < source->frame_count; i++) {
             if (source->read_frame(source->user, i, rgb) != 0) {
                 if (err != NULL && errlen > 0)
@@ -244,9 +244,9 @@ static smk_enc_status verify_body(const char *path,
                 status = SMK_ENC_ERR_INPUT;
                 goto cleanup;
             }
-            smk_histogram_add(&hist, rgb, pixels);
+            smk_histogram_add(hist, rgb, pixels);
         }
-        if (smk_quant_build_global(&hist, colors, &palette) == 0 ||
+        if (smk_quant_build_global(hist, colors, &palette) == 0 ||
             palette.count == 0) {
             status = fail(err, errlen, SMK_ENC_ERR_VERIFY,
                           "could not rebuild the shared palette");
@@ -314,7 +314,7 @@ static smk_enc_status verify_body(const char *path,
             status = SMK_ENC_ERR_INPUT;
             goto cleanup;
         }
-        if (smk_enc_choose_palette(options, &palette, &hist, rgb,
+        if (smk_enc_choose_palette(options, &palette, hist, rgb,
                                    source->width, source->height, colors, lut,
                                    indices, &frame_palette, &choice) != 0) {
             status = fail(err, errlen, SMK_ENC_ERR_VERIFY,
@@ -379,7 +379,7 @@ static smk_enc_status verify_body(const char *path,
                           "cannot read frame 0 for ring check");
             goto cleanup;
         }
-        if (smk_enc_choose_palette(options, &palette, &hist, rgb,
+        if (smk_enc_choose_palette(options, &palette, hist, rgb,
                                    source->width, source->height, colors, lut,
                                    indices, &frame_palette, &choice) != 0 ||
             memcmp(smk_get_palette(handle), choice.palette->display,
@@ -404,5 +404,6 @@ cleanup:
     free(indices);
     free(expected_audio);
     free(lut);
+    free(hist);
     return status;
 }

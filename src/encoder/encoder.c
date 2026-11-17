@@ -208,7 +208,7 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     smk_palette frame_palette;
     smk_enc_palette_choice choice;
     smk_quant_lut *lut = NULL;
-    smk_huff trees[SMK_VIDEO_TREE_COUNT];
+    smk_huff *trees = NULL; /* too large for the stack: about 590 KB each */
     smk_video video;
     smk_bitwriter tree_blob;
     smk_bitwriter frame_bits;
@@ -261,6 +261,10 @@ smk_enc_status smk_enc_encode(const smk_enc_source *source,
     if (fps_den == 0)
         fps_den = 1;
     interval = options->keyframe_interval;
+
+    trees = (smk_huff *)calloc(SMK_VIDEO_TREE_COUNT, sizeof(*trees));
+    if (trees == NULL)
+        return fail(err, errlen, SMK_ENC_ERR_ENCODE, "out of memory");
 
     memset(&video, 0, sizeof(video));
     memset(&container, 0, sizeof(container));
@@ -639,6 +643,7 @@ cleanup:
         smk_video_free(&video);
     for (i = 0; i < SMK_VIDEO_TREE_COUNT; i++)
         smk_huff_free(&trees[i]);
+    free(trees);
     free(rgb);
     free(indices);
     free(hist);
