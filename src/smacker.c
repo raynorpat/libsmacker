@@ -900,6 +900,12 @@ static char smk_render(smk s)
 			subsequent bytes are present */
 		size = 4 * (*p);
 
+		/* The record includes its length byte and must fit in the frame. */
+		if (size == 0 || size > i) {
+			fprintf(stderr, "libsmacker::smk_render(s) - ERROR: frame %lu: palette rec length %lu does not fit in %lu remaining bytes.\n", s->cur_frame, size, i);
+			goto error;
+		}
+
 		/* If video rendering enabled, kick this off for decode. */
 		if (s->video.enable)
 			smk_palette_apply((uint8_t *)s->video.palette, p + 1, size - 1);
@@ -923,6 +929,12 @@ static char smk_render(smk s)
 					((unsigned int) p[2] << 16) |
 					((unsigned int) p[1] << 8) |
 					((unsigned int) p[0]));
+
+			/* The record includes its length field and must fit in the frame. */
+			if (size < 4 || size > i) {
+				fprintf(stderr, "libsmacker::smk_render(s) - ERROR: frame %lu: audio[%u] rec length %lu does not fit in %lu remaining bytes.\n", s->cur_frame, track, size, i);
+				goto error;
+			}
 
 			/* If audio rendering enabled, kick this off for decode. */
 			if (s->audio[track].enable)

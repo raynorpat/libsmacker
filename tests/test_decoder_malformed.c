@@ -124,3 +124,70 @@ void test_decoder_truncated_file_fails_open(void)
     SMK_ASSERT(smk_open_memory(file, (unsigned long)(size - 1)) == NULL);
     free(file);
 }
+
+/* Open a damaged copy of the file and decode every frame. */
+static smk mal_open(const uint8_t *file, size_t size)
+{
+    smk s = smk_open_memory(file, (unsigned long)size);
+
+    if (s != NULL)
+        smk_enable_all(s, 0xff);
+    return s;
+}
+
+void test_decoder_audio_chunk_length_past_frame(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    size_t audio;
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    /* Frame 0 is: palette record, audio record, video. */
+    audio = mal_frame0(file) + 4u * file[mal_frame0(file)];
+    put_u32(file + audio, 0xfffffff0u);
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT_EQ_INT(smk_first(s), -1);
+        smk_close(s);
+    }
+
+    put_u32(file + audio, 2); /* shorter than its own length field */
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT_EQ_INT(smk_first(s), -1);
+        smk_close(s);
+    }
+    free(file);
+}
+
+void test_decoder_palette_length_past_frame(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    file[mal_frame0(file)] = 0; /* zero-length palette record */
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT_EQ_INT(smk_first(s), -1);
+        smk_close(s);
+    }
+
+    file[mal_frame0(file)] = 0xff; /* 1020 bytes, more than the frame holds */
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT_EQ_INT(smk_first(s), -1);
+        smk_close(s);
+    }
+    free(file);
+}

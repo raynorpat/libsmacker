@@ -4,6 +4,8 @@ int smk_test_failures = 0;
 int smk_test_checks = 0;
 
 void test_cli_defaults(void);
+void test_decoder_palette_length_past_frame(void);
+void test_decoder_audio_chunk_length_past_frame(void);
 void test_decoder_truncated_file_fails_open(void);
 void test_encode_null_source(void);
 void test_encode_null_output(void);
@@ -217,6 +219,10 @@ static const smk_test_case tests[] = {
     { "parse_options_frames_missing", test_parse_options_frames_missing },
     { "decoder_truncated_file_fails_open",
       test_decoder_truncated_file_fails_open },
+    { "decoder_audio_chunk_length_past_frame",
+      test_decoder_audio_chunk_length_past_frame },
+    { "decoder_palette_length_past_frame",
+      test_decoder_palette_length_past_frame },
     { NULL, NULL }
 };
 
