@@ -67,6 +67,7 @@ smk_enc_status smk_wav_load(const char *path, smk_pcm_audio *audio,
     int have_fmt = 0;
     int have_data = 0;
     long data_offset = 0;
+    long file_size;
     uint32_t data_size = 0;
     unsigned bytes_per_sample;
     unsigned block_align;
@@ -85,6 +86,13 @@ smk_enc_status smk_wav_load(const char *path, smk_pcm_audio *audio,
         if (err != NULL && errlen > 0)
             snprintf(err, errlen, "cannot open WAV file: %s", path);
         return SMK_ENC_ERR_INPUT;
+    }
+
+    /* fseek() succeeds past the end, so chunk sizes are checked against this. */
+    if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) < 0 ||
+        fseek(fp, 0, SEEK_SET) != 0) {
+        status = fail(err, errlen, "cannot determine WAV file size");
+        goto done;
     }
 
     if (read_exact(fp, riff, sizeof(riff)) != 0 ||
@@ -122,7 +130,8 @@ smk_enc_status smk_wav_load(const char *path, smk_pcm_audio *audio,
             data_offset = ftell(fp);
             data_size = size;
             have_data = 1;
-            if (data_offset < 0 ||
+            if (data_offset < 0 || data_offset > file_size ||
+                size > (unsigned long)(file_size - data_offset) ||
                 skip_bytes(fp, size) != 0) {
                 status = fail(err, errlen, "truncated WAV data chunk");
                 goto done;
