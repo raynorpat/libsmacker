@@ -608,12 +608,16 @@ int smk_huff8_lookup(const smk_huff8 * const t, smk_bitreader * const bs)
 #define SMK_HUFF16_BRANCH    0x80000000
 #define SMK_HUFF16_CACHE     0x40000000
 #define SMK_HUFF16_LEAF_MASK 0x3FFFFFFF
+/* Deepest branch chain accepted. Each level is one bit of a code and one
+	recursive call while building, so this bounds stack use on damaged
+	files. Real trees are far shallower. */
+#define SMK_HUFF16_MAX_DEPTH 500
 
 /* ************************************************************************* */
 /* HUFF16 Functions */
 /* ************************************************************************* */
 /* Recursive sub-func for building a tree into an array. */
-static int _smk_huff16_build_rec(smk_huff16 * const t, smk_bitreader * const bs, const smk_huff8 * const low8, const smk_huff8 * const hi8, const size_t limit)
+static int _smk_huff16_build_rec(smk_huff16 * const t, smk_bitreader * const bs, const smk_huff8 * const low8, const smk_huff8 * const hi8, const size_t limit, const unsigned depth)
 {
 	int bit, value;
 	assert(t);
@@ -624,6 +628,11 @@ static int _smk_huff16_build_rec(smk_huff16 * const t, smk_bitreader * const bs,
 	/* Make sure we aren't running out of bounds */
 	if (t->size >= limit) {
 		fputs("libsmacker::_smk_huff16_build_rec() - ERROR: size exceeded\n", stderr);
+		return 0;
+	}
+
+	if (depth > SMK_HUFF16_MAX_DEPTH) {
+		fputs("libsmacker::_smk_huff16_build_rec() - ERROR: tree is too deep\n", stderr);
 		return 0;
 	}
 
@@ -639,7 +648,7 @@ static int _smk_huff16_build_rec(smk_huff16 * const t, smk_bitreader * const bs,
 		value = t->size ++;
 
 		/* go build the left branch */
-		if (! _smk_huff16_build_rec(t, bs, low8, hi8, limit)) {
+		if (! _smk_huff16_build_rec(t, bs, low8, hi8, limit, depth + 1)) {
 			fputs("libsmacker::_smk_huff16_build_rec() - ERROR: failed to build left sub-tree\n", stderr);
 			return 0;
 		}
@@ -649,7 +658,7 @@ static int _smk_huff16_build_rec(smk_huff16 * const t, smk_bitreader * const bs,
 		t->tree[value] = SMK_HUFF16_BRANCH | t->size;
 
 		/* continue building the right side */
-		if (! _smk_huff16_build_rec(t, bs, low8, hi8, limit)) {
+		if (! _smk_huff16_build_rec(t, bs, low8, hi8, limit, depth + 1)) {
 			fputs("libsmacker::_smk_huff16_build_rec() - ERROR: failed to build right sub-tree\n", stderr);
 			return 0;
 		}
@@ -752,7 +761,7 @@ int smk_huff16_build(smk_huff16 * const t, smk_bitreader * const bs, uint32_t al
 		}
 
 		/* Finally, call recursive function to retrieve the Bigtree. */
-		if (! _smk_huff16_build_rec(t, bs, &low8, &hi8, limit)) {
+		if (! _smk_huff16_build_rec(t, bs, &low8, &hi8, limit, 0)) {
 			fputs("libsmacker::smk_huff16_build() - ERROR: failed to build huff16 tree\n", stderr);
 			free(t->tree);
 			t->tree = NULL;

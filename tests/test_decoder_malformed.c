@@ -387,3 +387,41 @@ void test_decoder_dimensions_not_multiple_of_four(void)
     }
     free(file);
 }
+
+void test_decoder_deep_tree_fails_open(void)
+{
+    /* Enough branch bits to overflow the stack if each one recurses. */
+    const size_t blob_size = 400000;
+    const size_t size = HEADER_SIZE + 4 + 1 + blob_size + 4;
+    uint8_t *file = (uint8_t *)calloc(1, size);
+    uint8_t *blob;
+    size_t bit = 0;
+    unsigned i;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    memcpy(file, "SMK2", 4);
+    put_u32(file + OFF_WIDTH, 8);
+    put_u32(file + OFF_HEIGHT, 8);
+    put_u32(file + OFF_FRAMES, 1);
+    put_u32(file + OFF_TREES_SIZE, (uint32_t)blob_size);
+    put_u32(file + OFF_TREE_SIZE, 12u + 4u * (1u << 24));
+    put_u32(file + HEADER_SIZE, 4); /* one 4-byte frame */
+
+    blob = file + HEADER_SIZE + 4 + 1;
+    memset(blob, 0xff, blob_size);
+    put_bits(blob, &bit, 1, 1); /* tree present */
+    for (i = 0; i < 2; i++) {   /* low and high byte trees: one leaf each */
+        put_bits(blob, &bit, 1, 1);
+        put_bits(blob, &bit, 0, 1);
+        put_bits(blob, &bit, 0x55, 8);
+        put_bits(blob, &bit, 0, 1);
+    }
+    put_bits(blob, &bit, 0, 32); /* escape values */
+    put_bits(blob, &bit, 0, 16);
+    /* Everything after this is 1 bits: branch, branch, branch, ... */
+
+    SMK_ASSERT(smk_open_memory(file, (unsigned long)size) == NULL);
+    free(file);
+}
