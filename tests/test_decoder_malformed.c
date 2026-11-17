@@ -191,3 +191,24 @@ void test_decoder_palette_length_past_frame(void)
     }
     free(file);
 }
+
+void test_decoder_pcm_larger_than_declared_buffer(void)
+{
+    size_t size = 0;
+    uint8_t *file = mal_make_file(&size);
+    smk s;
+
+    SMK_ASSERT(file != NULL);
+    if (file == NULL)
+        return;
+    /* The header promises 4-byte audio chunks; the frames hold far more. */
+    put_u32(file + OFF_AUDIO_SIZE, 4);
+    s = mal_open(file, size);
+    SMK_ASSERT(s != NULL);
+    if (s != NULL) {
+        SMK_ASSERT(smk_first(s) >= 0);
+        SMK_ASSERT_EQ_INT(smk_get_audio_size(s, 0), 0);
+        smk_close(s);
+    }
+    free(file);
+}

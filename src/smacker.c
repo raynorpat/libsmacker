@@ -726,8 +726,16 @@ static char smk_render_audio(struct smk_audio_t * s, unsigned char * p, unsigned
 	assert(s);
 	assert(p);
 
+	/* Nothing is decoded until a branch below succeeds. */
+	s->buffer_size = 0;
+
 	if (!s->compress) {
-		/* Raw PCM data, update buffer size and perform copy */
+		/* Raw PCM data: it must fit the buffer sized from the header. */
+		if (size > (unsigned long)s->max_buffer) {
+			fprintf(stderr, "libsmacker::smk_render_audio() - ERROR: PCM chunk of %lu bytes exceeds the declared maximum of %ld.\n", size, s->max_buffer);
+			goto error;
+		}
+
 		s->buffer_size = size;
 		memcpy(t, p, size);
 	} else if (s->compress == 1) {
